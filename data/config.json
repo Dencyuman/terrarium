@@ -1,0 +1,20 @@
+{
+  "_comment": "Terrarium v0.1 既定設定。個別の上書きは data/config.local.json(gitignore 済み)で行う。",
+  "llm": {
+    "endpoint": "http://localhost:11434",
+    "model": "gemma4:e4b",
+    "temperature": 0.3,
+    "timeout_sec": 30,
+    "parallel": 4,
+    "thinking_mode": false
+  },
+  "world": {
+    "size": 20,
+    "seed": 541119842,
+    "tick_per_day": 10,
+    "vision_radius": 3
+  },
+  "agents": {
+    "initial_count": 20
+  }
+}

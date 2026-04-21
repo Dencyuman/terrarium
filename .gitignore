@@ -1,8 +1,27 @@
-
-# Godot-specific ignores
+# Godot 4 ignores
+.godot/
 .import/
 export.cfg
 export_presets.cfg
+*.translation
 
-# Mono-specific ignores
+# Mono-specific ignores (未使用だが念のため)
 .mono/
+
+# System / editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build artifacts
+build/
+export/
+dist/
+
+# Local config (LLM endpoint override 等)
+data/config.local.json
+
+# Simulation run logs (v0.2 以降で本格化)
+runs/
