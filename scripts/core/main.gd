@@ -666,6 +666,10 @@ func _on_agent_decided_incremental(agent_id: int, actions: Array) -> void:
 	var relation_view := get_node_or_null(^"ViewStack/RelationView") as RelationGraphView
 	if relation_view != null and relation_view.visible:
 		relation_view.queue_redraw()
+	# 家系図(表示中のみ再描画)
+	var family_view := get_node_or_null(^"ViewStack/FamilyView") as FamilyTreeView
+	if family_view != null and family_view.visible:
+		family_view.queue_redraw()
 
 func _clear_action_cards() -> void:
 	var panel := get_node_or_null(^"UI/ActionPanel") as Panel
