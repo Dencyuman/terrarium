@@ -37,8 +37,13 @@ static func parse(body_text: String, agents: Array) -> Array:
 			data = inner2
 		else:
 			return [Action.wait("parse: response not object")]
+	return parse_decision(data, agents)
+
+# Tool use 経路: tool_call.function.arguments(既にパース済み Dictionary)を直接受ける。
+static func parse_decision(data: Variant, agents: Array) -> Array:
+	if data == null or not (data is Dictionary):
+		return [Action.wait("parse: decision not object")]
 	var reason: String = str(data.get("reason", ""))
-	# 新スキーマ: "actions" 配列
 	if data.has("actions") and data["actions"] is Array:
 		var result: Array = []
 		for entry in data["actions"]:
@@ -63,7 +68,14 @@ static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) ->
 		"wait", "":
 			return Action.wait(reason)
 		"take":
-			return Action.take(reason)
+			var tdir_raw: String = str(d.get("direction", "")).to_lower().strip_edges()
+			var tdir: Vector2i = Vector2i.ZERO
+			if tdir_raw != "":
+				if DIRECTIONS.has(tdir_raw):
+					tdir = DIRECTIONS[tdir_raw]
+				else:
+					return Action.wait("parse: bad take direction %s" % tdir_raw)
+			return Action.take(reason, tdir)
 		"eat":
 			return Action.eat(reason)
 		"move":

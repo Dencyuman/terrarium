@@ -26,10 +26,12 @@ static func move(dir: Vector2i, reason_: String = "") -> Action:
 	a.reason = reason_
 	return a
 
-static func take(reason_: String = "") -> Action:
-	# Phase 4 以降、take は「現在タイルの食料を inventory に積む」物理動作。
+static func take(reason_: String = "", dir: Vector2i = Vector2i.ZERO) -> Action:
+	# take は「指定タイルの食料を拾う」物理動作。dir は自タイルからのオフセット(-1..1, -1..1)。
+	# 既定 (0,0) なら現在タイル。8 近傍 + 現在 = 9 マスのいずれかを選べる。
 	var a := Action.new()
 	a.kind = Kind.TAKE
+	a.direction = dir
 	a.reason = reason_
 	return a
 

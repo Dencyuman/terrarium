@@ -23,7 +23,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
 
 # Action verbs (what is physically possible)
 - "move": step to an adjacent tile (including diagonals). field `direction`: one of "north" / "east" / "south" / "west" / "northeast" / "northwest" / "southeast" / "southwest". If the first tile in that direction is occupied by another living agent, you automatically slide past them to the second tile in the same direction (so a single `move` can cover 2 tiles when squeezing through a crowd). The slide only triggers when the immediate neighbor blocks you; stamina and hunger costs are the same as a normal move.
-- "take": pick up one food item on your current tile into your inventory. Fails silently if no food here or your inventory is full.
+- "take": pick up one food item from any of the 9 tiles within your physical reach (your tile + 8 neighbors). Optional field `direction`: one of the 8 direction names to pick an adjacent tile; omit `direction` to take from the tile you are standing on. You can execute multiple `take` actions in the same bundle to sweep several tiles in one tick. Fails silently if that tile has no food, your inventory is full, or the tile is out of bounds.
 - "eat": consume one food item. Priority: one from your inventory (-1 slot) -> else one from your current tile if present. Either way your hunger rises.
 - "give": transfer one food item from your inventory to any agent within your vision (up to 3 tiles away in any direction — handed close-up or tossed). field `target`: the name of that agent. Fails silently if target is out of vision, you have nothing to give, or target's inventory is full.
 - "attack": strike an orthogonally adjacent agent. Their health decreases. field `target`.
@@ -41,9 +41,9 @@ Each tick, you receive your own state, what you can see, your past actions, what
   - `speak`: up to 1 (one voice, one utterance)
   - `wait`: up to 1
   - `move`: up to 3 (walk several steps)
-  - `take` / `eat` / `give` / `attack` / `embrace`: up to 2 each (body can do each a couple of times)
-- The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take when inventory full, give to non-adjacent agent, eat when no food available) silently fails and the remaining actions continue.
-- Use composites aggressively: e.g. "walk two tiles and pick up food" = `[move east, move east, take]`. "Rescue a neighbor" = `[take, move east, give 霞, speak "食え"]`. "Predator" = `[move east, attack 霞, attack 霞]` (second swing on still-adjacent same target).
+  - `take`: up to 5 (no per-kind cap beyond the 5-action bundle cap)
+  - `eat` / `give` / `attack` / `embrace`: up to 2 each (body can do each a couple of times)
+- The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take a tile with no food, give to an agent out of vision, eat when no food available) silently fails and the remaining actions continue.
 
 # World physics
 - Coordinates: x grows east, y grows south. (0,0) is the NW corner.
@@ -65,30 +65,142 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - `vision[i].agent` entries include `hunger` and `health` of the visible agent. You can see at a glance who is hungry and who is wounded. This is physically observable (visible body condition).
 - `own_history` entries marked `(failed:<reason>)` are actions you previously attempted but that the world did not allow. Avoid repeating the same impossible attempt.
 
-# Output format
-Return exactly one JSON object, nothing else. No markdown, no explanation.
-
-{
-  "actions": [
-    {"kind":"take"},
-    {"kind":"move","direction":"east"},
-    {"kind":"give","target":"霞"},
-    {"kind":"eat"},
-    {"kind":"speak","text":"...","target":"..."},
-    {"kind":"attack","target":"..."},
-    {"kind":"embrace","target":"..."},
-    {"kind":"wait"}
-  ],
-  "reason": "<optional short Japanese note about why, 30 chars or less>"
-}
-
-Omit fields that do not apply. `actions` may be empty (equivalent to a single wait).
+# Output
+Call the `act` tool exactly once, passing this tick's action bundle as its arguments. Do not write any free text outside the tool call. `actions` may be empty (equivalent to a single wait). Omit fields that do not apply to a given action's `kind`.
 
 # Language
-All free-form output (`text`, `reason`) must be in **Japanese**. Keys and enum values (`kind`, `direction`, `target` names) stay in the schema-defined form."""
+All free-form output (`text`, `reason`) must be in **Japanese**. Enum values (`kind`, `direction`) and `target` names stay in the schema-defined form."""
 
 static func system_prompt() -> String:
 	return SYSTEM_PROMPT
+
+# Tool schema for structured output. Physics (per-kind limits, bundle cap) is declared
+# via JSON Schema 2020-12 `maxItems` + `contains`/`maxContains`. Not all providers enforce
+# these constraints at decode time (Anthropic validates post-hoc, Ollama/llama.cpp may drop
+# cross-element constraints), so the harness re-asserts them in `Scheduler.sanitize_bundle`.
+static func tool_schema() -> Dictionary:
+	var direction_enum := [
+		"north", "south", "east", "west",
+		"northeast", "northwest", "southeast", "southwest"
+	]
+	var target_schema := {
+		"oneOf": [
+			{"type": "string"},
+			{"type": "array", "items": {"type": "string"}}
+		]
+	}
+	# kind 別 variant。additionalProperties:false で他 kind のフィールドを入れさせない。
+	var action_variants: Array = [
+		{
+			"type": "object",
+			"properties": {"kind": {"const": "wait"}},
+			"required": ["kind"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "move"},
+				"direction": {"type": "string", "enum": direction_enum}
+			},
+			"required": ["kind", "direction"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "take"},
+				"direction": {
+					"type": "string",
+					"enum": direction_enum,
+					"description": "Optional. Adjacent direction to pick from; omit to take from your own tile."
+				}
+			},
+			"required": ["kind"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {"kind": {"const": "eat"}},
+			"required": ["kind"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "speak"},
+				"text": {"type": "string", "description": "Japanese colloquial, one short sentence."},
+				"target": target_schema
+			},
+			"required": ["kind", "text"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "give"},
+				"target": {"type": "string", "description": "Recipient agent name."}
+			},
+			"required": ["kind", "target"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "attack"},
+				"target": {"type": "string", "description": "Target agent name (must be adjacent)."}
+			},
+			"required": ["kind", "target"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "embrace"},
+				"target": {"type": "string", "description": "Target agent name (must be adjacent)."}
+			},
+			"required": ["kind", "target"],
+			"additionalProperties": false
+		}
+	]
+	var per_kind_limits := {
+		"wait": 1, "speak": 1, "move": 3,
+		"take": 5, "eat": 2, "give": 2, "attack": 2, "embrace": 2,
+	}
+	var all_of: Array = []
+	for k in per_kind_limits.keys():
+		all_of.append({
+			"contains": {
+				"type": "object",
+				"properties": {"kind": {"const": k}},
+				"required": ["kind"]
+			},
+			"maxContains": per_kind_limits[k]
+		})
+	return {
+		"type": "function",
+		"function": {
+			"name": "act",
+			"description": "Emit this tick's ordered bundle of physical actions for your agent.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"actions": {
+						"type": "array",
+						"maxItems": 5,
+						"items": {"oneOf": action_variants},
+						"allOf": all_of
+					},
+					"reason": {
+						"type": "string",
+						"description": "Short Japanese note about why (30 chars or less).",
+						"maxLength": 60
+					}
+				},
+				"required": ["actions"]
+			}
+		}
+	}
 
 static func build_user_prompt(agent: Agent, world: World, resources: ResourceField, agents: Array) -> String:
 	var state := _agent_state(agent, world, resources, agents)

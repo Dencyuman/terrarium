@@ -26,7 +26,7 @@ const TICK_MAX_ACTIONS: int = 5
 const PER_KIND_MAX := {
 	Action.Kind.WAIT: 1,
 	Action.Kind.MOVE: 3,
-	Action.Kind.TAKE: 2,
+	Action.Kind.TAKE: 5,   # take 固有の上限なし。5 アクション/tick の全体上限のみ。
 	Action.Kind.EAT: 2,
 	Action.Kind.GIVE: 2,
 	Action.Kind.ATTACK: 2,
@@ -314,19 +314,29 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			action.succeeded = true
 			return
 		Action.Kind.TAKE:
+			# 9 マス(自タイル + 8 近傍)からの拾得を許容。direction は (-1..1, -1..1)。
+			var tdir: Vector2i = action.direction
+			if absi(tdir.x) > 1 or absi(tdir.y) > 1:
+				action.failure_note = "out_of_reach"
+				return
+			var tx: int = agent.grid_pos.x + tdir.x
+			var ty: int = agent.grid_pos.y + tdir.y
+			if not _in_bounds(tx, ty):
+				action.failure_note = "out_of_bounds"
+				return
 			if not agent.inventory_has_space():
 				action.failure_note = "inventory_full"
 				return
 			if not agent.can_afford_stamina(take_stamina):
 				action.failure_note = "exhausted"
 				return
-			var nut: int = resources.take(agent.grid_pos.x, agent.grid_pos.y)
+			var nut: int = resources.take(tx, ty)
 			if nut > 0:
 				agent.inventory_add("food")
 				agent.spend_stamina(take_stamina)
 				action.succeeded = true
 			else:
-				action.failure_note = "no_food_here"
+				action.failure_note = "no_food_there"
 		Action.Kind.EAT:
 			# eat は stamina コストが 0 なので疲労時でも食える(生存権)。
 			if agent.inventory_remove_first("food"):

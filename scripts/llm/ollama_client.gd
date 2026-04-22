@@ -114,13 +114,16 @@ func _start_request(task: Dictionary) -> void:
 	var sys_prompt: String = PromptBuilder.system_prompt()
 	# Gemma 4 のネイティブ system ロール対応を活かすため /api/chat を使用。
 	# Gemma 4 は think がデフォルト ON のため、明示的に OFF にしないと 1 リクエスト 20 秒を超える。
+	# tools: Ollama の tool use 経路。Gemma 4 (gemma4:e4b) は capabilities に "tools" を持つため
+	# GBNF grammar で kind/direction enum と actions 配列構造が decode-time に強制される。
+	# per-kind 上限(maxContains)は grammar で保証されないので sanitize_bundle が最終判定。
 	var body := {
 		"model": model,
 		"messages": [
 			{"role": "system", "content": sys_prompt},
 			{"role": "user", "content": user_prompt},
 		],
-		"format": "json",
+		"tools": [PromptBuilder.tool_schema()],
 		"stream": false,
 		"keep_alive": "5m",
 		"think": thinking_mode,
@@ -149,8 +152,26 @@ func _await_and_finish(http: HTTPRequest, agent: Agent, agents: Array) -> void:
 	if res_code < 200 or res_code >= 300:
 		_finish_request(http, agent, agents, [Action.wait("http %d" % res_code)] as Array, false)
 		return
-	var actions: Array = ResponseParser.parse(body_text, agents)
+	var actions: Array = _parse_response(body_text, agents)
 	_finish_request(http, agent, agents, actions, true)
+
+# tool_calls(Ollama tool use 経路)を優先的に解釈し、無ければ従来の JSON content にフォールバック。
+func _parse_response(body_text: String, agents: Array) -> Array:
+	var parsed = JSON.parse_string(body_text)
+	if parsed is Dictionary:
+		var msg = parsed.get("message", null)
+		if msg is Dictionary:
+			var tool_calls = msg.get("tool_calls", [])
+			if tool_calls is Array and tool_calls.size() > 0:
+				var fn = tool_calls[0].get("function", null)
+				if fn is Dictionary:
+					var args = fn.get("arguments", null)
+					# Ollama は arguments を Dictionary で返す。念のため文字列の場合も救う。
+					if args is String:
+						args = JSON.parse_string(args)
+					if args is Dictionary:
+						return ResponseParser.parse_decision(args, agents)
+	return ResponseParser.parse(body_text, agents)
 
 func _finish_request(http: HTTPRequest, agent: Agent, _agents: Array, actions: Array, ok: bool) -> void:
 	http.queue_free()
