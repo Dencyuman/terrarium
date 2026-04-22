@@ -17,14 +17,23 @@ var grid_pos: Vector2i = Vector2i.ZERO
 var hunger: int = HUNGER_INITIAL
 var health: int = HEALTH_INITIAL
 
+# Phase 3 でセットされるローリング情報(UI 表示/プロンプトで参照)
+var last_action_kind: int = 0   # Action.Kind
+var last_action_reason: String = ""
+var last_speech: String = ""
+var last_speech_tick: int = -1
+var last_speech_target_ids: Array[int] = []   # 空 = 独り言 / 不特定
+var recent_events: Array[String] = []   # 自分が観測した最近 5 件
+var own_history: Array[String] = []      # 自分の直近 5 tick の行動記録(繰り返し抑制用)
+
 func _init(id_: int = 0) -> void:
 	id = id_
 
 func is_alive() -> bool:
 	return health > 0
 
-func apply_tick_decay() -> void:
-	hunger = max(0, hunger - 1)
+func apply_tick_decay(base_cost: int = 1) -> void:
+	hunger = max(0, hunger - base_cost)
 	if hunger == 0:
 		health = max(0, health - 2)
 

@@ -1,0 +1,103 @@
+class_name ResponseParser
+extends RefCounted
+
+const DIRECTIONS := {
+	"north": Vector2i(0, -1),
+	"south": Vector2i(0, 1),
+	"east":  Vector2i(1, 0),
+	"west":  Vector2i(-1, 0),
+	"n": Vector2i(0, -1),
+	"s": Vector2i(0, 1),
+	"e": Vector2i(1, 0),
+	"w": Vector2i(-1, 0),
+	"上": Vector2i(0, -1),
+	"下": Vector2i(0, 1),
+	"右": Vector2i(1, 0),
+	"左": Vector2i(-1, 0),
+}
+
+static func parse(body_text: String, agents: Array) -> Array:
+	# 返り値は Array[Action](複合アクション)。空 Array の場合は wait として扱う。
+	var data = JSON.parse_string(body_text)
+	if data == null or not (data is Dictionary):
+		return [Action.wait("parse: root not object")]
+	if data.has("message") and data["message"] is Dictionary:
+		var content_raw = data["message"].get("content", "")
+		var inner = JSON.parse_string(str(content_raw))
+		if inner is Dictionary:
+			data = inner
+		else:
+			return [Action.wait("parse: chat content not object")]
+	elif data.has("response"):
+		var inner2 = JSON.parse_string(str(data["response"]))
+		if inner2 is Dictionary:
+			data = inner2
+		else:
+			return [Action.wait("parse: response not object")]
+	var reason: String = str(data.get("reason", ""))
+	# 新スキーマ: "actions" 配列
+	if data.has("actions") and data["actions"] is Array:
+		var result: Array = []
+		for entry in data["actions"]:
+			if not (entry is Dictionary):
+				continue
+			var act := _parse_one(entry, reason, agents)
+			if act != null:
+				result.append(act)
+		if result.is_empty():
+			return [Action.wait(reason if reason != "" else "parse: empty actions")]
+		return result
+	# 旧スキーマ: 単発 "action"
+	var single := _parse_one(data, reason, agents)
+	if single == null:
+		return [Action.wait("parse: unknown shape")]
+	return [single]
+
+static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) -> Action:
+	var kind_str: String = str(d.get("kind", d.get("action", ""))).to_lower().strip_edges()
+	var reason: String = str(d.get("reason", fallback_reason))
+	match kind_str:
+		"wait", "":
+			return Action.wait(reason)
+		"take", "eat":
+			return Action.take(reason)
+		"move":
+			var dir_raw: String = str(d.get("direction", "")).to_lower().strip_edges()
+			if DIRECTIONS.has(dir_raw):
+				return Action.move(DIRECTIONS[dir_raw], reason)
+			return Action.wait("parse: bad direction %s" % dir_raw)
+		"speak", "say", "話す":
+			var text: String = str(d.get("text", "")).strip_edges()
+			if text.is_empty():
+				return Action.wait("parse: empty speech")
+			var target_ids: Array[int] = _parse_targets(d.get("target", null), agents)
+			return Action.speak(text, target_ids, reason)
+		_:
+			return null
+
+static func _lookup_agent_id(name: String, agents: Array) -> int:
+	if name.is_empty():
+		return -1
+	for a in agents:
+		if a.agent_name == name or a.romaji == name:
+			return a.id
+	return -1
+
+# target フィールド: 文字列 / 文字列配列 / null を受けて id 配列に正規化
+static func _parse_targets(raw: Variant, agents: Array) -> Array[int]:
+	var out: Array[int] = []
+	if raw == null:
+		return out
+	if raw is Array:
+		for item in raw:
+			var name_s: String = str(item).strip_edges()
+			var id_val: int = _lookup_agent_id(name_s, agents)
+			if id_val >= 0 and not (id_val in out):
+				out.append(id_val)
+	else:
+		var single: String = str(raw).strip_edges()
+		if not single.is_empty():
+			var id_val: int = _lookup_agent_id(single, agents)
+			if id_val >= 0:
+				out.append(id_val)
+	return out

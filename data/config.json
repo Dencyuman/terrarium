@@ -3,7 +3,7 @@
   "llm": {
     "endpoint": "http://localhost:11434",
     "model": "gemma4:e4b",
-    "temperature": 0.3,
+    "temperature": 0.6,
     "timeout_sec": 30,
     "parallel": 4,
     "thinking_mode": false
@@ -16,5 +16,23 @@
   },
   "agents": {
     "initial_count": 20
+  },
+  "costs": {
+    "_comment": "全て hunger 単位。tick 毎の基礎代謝 + 各アクションの追加コスト。",
+    "tick_base_hunger": 1,
+    "move_hunger": 2,
+    "speak_hunger": 1
+  },
+  "resources": {
+    "_comment": "食料スポーン率(確率、地形別)。grass/forest のみ食料が出る。",
+    "initial_spawn": {
+      "grass": 0.06,
+      "forest": 0.12
+    },
+    "regen_per_tick": {
+      "grass": 0.003,
+      "forest": 0.008
+    },
+    "food_nutrition": 25
   }
 }
