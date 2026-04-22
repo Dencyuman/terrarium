@@ -4,7 +4,7 @@ const BASE_TICK_SEC: float = 0.5  # 無 LLM 時の基準 tick。LLM 駆動時は
 const LOG_MAX: int = 50
 const CHRONICLE_MAX: int = 200
 const CHRONICLE_COMPACT_LIMIT: int = 12
-const WORLD_FRAME_SIZE: float = 640.0   # 20*32
+const WORLD_FRAME_SIZE: float = 720.0   # 20*36
 const WORLD_ORIG_LOCAL: Vector2 = Vector2(100, 4)   # WorldView の元位置
 
 @export var world_view_path: NodePath = ^"ViewStack/WorldView"
@@ -31,6 +31,21 @@ var world_seed: int = 0
 var world_size: int = 20
 var tick_per_day: int = 10
 var config: Dictionary
+
+# LLM API コスト累積(per-run、リセット時にクリア)
+var total_input_tokens: int = 0
+var total_output_tokens: int = 0
+var total_cost_usd: float = 0.0
+
+# 各モデルの価格 (USD / 1M tokens)。不明なモデルは 0 扱い(無償=Ollama など)。
+const PRICING := {
+	"claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0},
+	"claude-haiku-4-5":          {"in": 1.0, "out": 5.0},
+	"gemini-3.1-flash-lite-preview": {"in": 0.25, "out": 1.5},
+	"gemini-3.1-flash-lite":         {"in": 0.25, "out": 1.5},
+	"gemini-3-flash-preview":        {"in": 0.5,  "out": 2.0},
+	"gemini-3-flash":                {"in": 0.5,  "out": 2.0},
+}
 
 var log_entries: Array[String] = []
 var chronicle_entries: Array[Dictionary] = []
@@ -66,6 +81,7 @@ func _ready() -> void:
 	ollama.agent_decided.connect(_on_agent_decided_incremental)
 	ollama.llm_request_sent.connect(_on_llm_request_sent)
 	ollama.llm_response_received.connect(_on_llm_response_received)
+	ollama.usage_recorded.connect(_on_usage_recorded)
 
 	_initialize_simulation(names_data)
 	_wire_views()
@@ -204,9 +220,9 @@ func _wire_tabs() -> void:
 		btn.pressed.connect(_on_tab_pressed.bind(i))
 
 func _wire_view_controls() -> void:
-	var tb := get_node_or_null(^"UI/ViewControls/ToggleBubbles") as Button
-	var ta := get_node_or_null(^"UI/ViewControls/ToggleArrows") as Button
-	var rv := get_node_or_null(^"UI/ViewControls/ResetView") as Button
+	var tb := get_node_or_null(^"UI/StatusBar/ViewControls/ToggleBubbles") as Button
+	var ta := get_node_or_null(^"UI/StatusBar/ViewControls/ToggleArrows") as Button
+	var rv := get_node_or_null(^"UI/StatusBar/ViewControls/ResetView") as Button
 	if tb != null:
 		tb.toggled.connect(_on_toggle_bubbles)
 	if ta != null:
@@ -252,27 +268,16 @@ func _wire_playback() -> void:
 	if group == null:
 		return
 	var pause: Button = group.get_node_or_null(^"Pause") as Button
-	var spd1: Button = group.get_node_or_null(^"Spd1") as Button
-	var spd2: Button = group.get_node_or_null(^"Spd2") as Button
-	var spd5: Button = group.get_node_or_null(^"Spd5") as Button
 	var reset_btn: Button = group.get_node_or_null(^"Reset") as Button
 	if pause != null:
 		pause.disabled = false
 		pause.text = "▶"
 		pause.pressed.connect(_on_pause_toggled.bind(pause))
-	if spd1 != null:
-		spd1.disabled = false
-		spd1.pressed.connect(_on_speed_changed.bind(1.0, [spd1, spd2, spd5]))
-	if spd2 != null:
-		spd2.disabled = false
-		spd2.pressed.connect(_on_speed_changed.bind(2.0, [spd1, spd2, spd5]))
-	if spd5 != null:
-		spd5.disabled = false
-		spd5.pressed.connect(_on_speed_changed.bind(5.0, [spd1, spd2, spd5]))
 	if reset_btn != null:
 		reset_btn.disabled = false
 		reset_btn.pressed.connect(_on_reset_pressed)
-	_highlight_speed([spd1, spd2, spd5], 0)
+	# LLM レイテンシが律速なので速度倍率は常に 1.0 固定
+	speed_multiplier = 1.0
 
 # --- handlers ---
 
@@ -300,27 +305,15 @@ func _on_pause_toggled(btn: Button) -> void:
 	btn.text = "II" if running else "▶"
 	accumulator = 0.0
 
-func _on_speed_changed(mult: float, btns: Array) -> void:
-	speed_multiplier = mult
-	var idx := 0
-	if mult == 2.0:
-		idx = 1
-	elif mult == 5.0:
-		idx = 2
-	_highlight_speed(btns, idx)
-
-func _highlight_speed(btns: Array, active_idx: int) -> void:
-	for i in btns.size():
-		var b: Button = btns[i]
-		if b == null:
-			continue
-		b.button_pressed = (i == active_idx)
-
 func _on_reset_pressed() -> void:
 	running = false
 	accumulator = 0.0
 	log_entries.clear()
 	chronicle_entries.clear()
+	total_input_tokens = 0
+	total_output_tokens = 0
+	total_cost_usd = 0.0
+	_update_cost_label()
 	var pause := get_node_or_null(^"UI/StatusBar/SpeedGroup/Pause") as Button
 	if pause != null:
 		pause.text = "▶"
@@ -611,6 +604,10 @@ func _append_log_entry(agent: Agent, act: Action) -> void:
 			]
 		_:
 			return
+	# 理由を sub-line として併記(空でなければ)
+	var reason_text: String = act.reason.strip_edges()
+	if reason_text != "":
+		line += "\n       [color=#6a6660]└ %s[/color]" % reason_text
 	log_entries.push_back(line)
 	while log_entries.size() > LOG_MAX:
 		log_entries.pop_front()
@@ -646,6 +643,35 @@ func _on_health_changed(status: String) -> void:
 			color = Color(0.88, 0.72, 0.38, 1)
 	conn_label.text = "%s  %s" % [prefix, target]
 	conn_label.modulate = color
+
+func _on_usage_recorded(in_tok: int, out_tok: int) -> void:
+	total_input_tokens += in_tok
+	total_output_tokens += out_tok
+	var model_id: String = _current_model_id()
+	if PRICING.has(model_id):
+		var p: Dictionary = PRICING[model_id]
+		total_cost_usd += float(in_tok) * float(p["in"]) / 1_000_000.0
+		total_cost_usd += float(out_tok) * float(p["out"]) / 1_000_000.0
+	_update_cost_label()
+
+func _current_model_id() -> String:
+	var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
+	match p:
+		"anthropic": return str(config["llm"].get("anthropic_model", ""))
+		"gemini":    return str(config["llm"].get("gemini_model", ""))
+		_:           return str(config["llm"].get("model", ""))
+
+func _update_cost_label() -> void:
+	var label := get_node_or_null(^"UI/FooterBar/CostStatus") as Label
+	if label == null:
+		return
+	var in_k := float(total_input_tokens) / 1000.0
+	var out_k := float(total_output_tokens) / 1000.0
+	if PRICING.has(_current_model_id()):
+		label.text = "$%.4f  ·  in %.1fk / out %.1fk tok" % [total_cost_usd, in_k, out_k]
+	else:
+		# 無償(Ollama 等)はコスト省略してトークンだけ
+		label.text = "in %.1fk / out %.1fk tok (local)" % [in_k, out_k]
 
 func _provider_display_name() -> String:
 	var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
@@ -881,7 +907,8 @@ func _update_speech_log_ui() -> void:
 	if body != null:
 		body.visible = has_entries
 		if has_entries:
-			body.text = "\n".join(log_entries)
+			# 二重改行で各エントリを視覚的なカードブロックとして分離
+			body.text = "\n\n".join(log_entries)
 
 # --- agent spawn / JSON ---
 
@@ -1009,9 +1036,16 @@ func _format_agent_list() -> String:
 		]
 		var sym := "♀" if a.gender == "female" else "♂"
 		var gender_color := "#d28ac8" if a.gender == "female" else "#7da8e0"
-		var row := "[color=%s]■[/color]  [b]%s[/b]  [color=%s]%s[/color] [color=#8a8680]age %d · hp %d hg %d st %d[/color]" % [
-			hex, a.agent_name, gender_color, sym, 20 + (a.id % 10), a.health, a.hunger, a.stamina,
-		]
+		var row: String
+		if a.is_alive():
+			row = "[color=%s]■[/color]  [b]%s[/b]  [color=%s]%s[/color] [color=#8a8680]age %d · hp %d hg %d st %d[/color]" % [
+				hex, a.agent_name, gender_color, sym, 20 + (a.id % 10), a.health, a.hunger, a.stamina,
+			]
+		else:
+			# 死者: grey + 取り消し線風、meta クリックは残す(関係性参照のため)
+			row = "[color=#4a4a4a]✕[/color]  [s][color=#707070]%s[/color][/s]  [color=#5a5a5a]%s[/color] [color=#5a5a5a]故人[/color]" % [
+				a.agent_name, sym,
+			]
 		# 行全体をクリック可能に(meta = agent_id)
 		lines.append("[url=%d]%s[/url]" % [a.id, row])
 		lines.append("[color=#3a3e46]──[/color]")

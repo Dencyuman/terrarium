@@ -11,6 +11,8 @@ signal health_changed(status: String)   # "ok" / "error" / "unknown"
 signal agent_decided(agent_id: int, actions: Array)
 signal llm_request_sent(agent_id: int, user_prompt: String)
 signal llm_response_received(agent_id: int, body: String, latency_ms: int)
+# 1 リクエストあたりの消費トークン(0 のフィールドは未知/無償)
+signal usage_recorded(input_tokens: int, output_tokens: int)
 
 var last_latency_ms: int = 0
 var last_status: String = "unknown"

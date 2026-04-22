@@ -48,21 +48,24 @@ color = Color(0.078, 0.090, 0.114, 1)
 mouse_filter = 2
 
 [node name="ViewStack" type="Node2D" parent="."]
-position = Vector2(280, 96)
+position = Vector2(240, 120)
 
 [node name="WorldView" type="Node2D" parent="ViewStack"]
 position = Vector2(100, 4)
 script = ExtResource("2_view")
 
 [node name="RelationView" type="Node2D" parent="ViewStack"]
+position = Vector2(100, 4)
 visible = false
 script = ExtResource("3_relation")
 
 [node name="FamilyView" type="Node2D" parent="ViewStack"]
+position = Vector2(100, 4)
 visible = false
 script = ExtResource("4_family")
 
 [node name="ChronicleView" type="Node2D" parent="ViewStack"]
+position = Vector2(100, 4)
 visible = false
 script = ExtResource("5_chronicle")
 
@@ -105,21 +108,6 @@ theme_override_constants/separation = 4
 [node name="Pause" type="Button" parent="UI/StatusBar/SpeedGroup"]
 custom_minimum_size = Vector2(42, 40)
 text = "II"
-disabled = true
-
-[node name="Spd1" type="Button" parent="UI/StatusBar/SpeedGroup"]
-custom_minimum_size = Vector2(40, 40)
-text = "1x"
-disabled = true
-
-[node name="Spd2" type="Button" parent="UI/StatusBar/SpeedGroup"]
-custom_minimum_size = Vector2(40, 40)
-text = "2x"
-disabled = true
-
-[node name="Spd5" type="Button" parent="UI/StatusBar/SpeedGroup"]
-custom_minimum_size = Vector2(40, 40)
-text = "5x"
 disabled = true
 
 [node name="Reset" type="Button" parent="UI/StatusBar/SpeedGroup"]
@@ -254,36 +242,33 @@ toggle_mode = true
 button_group = SubResource("Bg_tabs")
 text = "年代記"
 
-[node name="ViewControls" type="HBoxContainer" parent="UI"]
-offset_left = 912.0
-offset_top = 106.0
-offset_right = 1112.0
-offset_bottom = 138.0
+[node name="ViewControls" type="HBoxContainer" parent="UI/StatusBar"]
+offset_left = 340.0
+offset_top = 26.0
+offset_right = 472.0
+offset_bottom = 66.0
 theme_override_constants/separation = 4
 
-[node name="ToggleBubbles" type="Button" parent="UI/ViewControls"]
-custom_minimum_size = Vector2(60, 30)
-theme_override_fonts/font = SubResource("Font_bold")
-theme_override_font_sizes/font_size = 11
+[node name="ToggleBubbles" type="Button" parent="UI/StatusBar/ViewControls"]
+custom_minimum_size = Vector2(42, 40)
+theme_override_font_sizes/font_size = 14
 toggle_mode = true
 button_pressed = true
-text = "💬 吹"
+text = "💬"
 tooltip_text = "吹き出し表示 on/off"
 
-[node name="ToggleArrows" type="Button" parent="UI/ViewControls"]
-custom_minimum_size = Vector2(60, 30)
-theme_override_fonts/font = SubResource("Font_bold")
-theme_override_font_sizes/font_size = 11
+[node name="ToggleArrows" type="Button" parent="UI/StatusBar/ViewControls"]
+custom_minimum_size = Vector2(42, 40)
+theme_override_font_sizes/font_size = 14
 toggle_mode = true
 button_pressed = true
-text = "→ 矢印"
+text = "→"
 tooltip_text = "target 矢印 on/off"
 
-[node name="ResetView" type="Button" parent="UI/ViewControls"]
-custom_minimum_size = Vector2(62, 30)
-theme_override_fonts/font = SubResource("Font_bold")
-theme_override_font_sizes/font_size = 11
-text = "⌂ リセット"
+[node name="ResetView" type="Button" parent="UI/StatusBar/ViewControls"]
+custom_minimum_size = Vector2(42, 40)
+theme_override_font_sizes/font_size = 14
+text = "⌂"
 tooltip_text = "ズームを 1:1 に戻す"
 
 [node name="AgentListPanel" type="Panel" parent="UI"]
@@ -350,42 +335,6 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
 text = "左のリスト行、またはワールド上のバッジをクリックすると、選択したエージェントの状態(空腹度/体力)・性格・直近の行動・場所がここに表示されます。"
-
-[node name="ActionPanel" type="Panel" parent="UI"]
-offset_left = 284.0
-offset_top = 744.0
-offset_right = 1116.0
-offset_bottom = 860.0
-theme_override_styles/panel = SubResource("Sb_panel")
-
-[node name="Header" type="Label" parent="UI/ActionPanel"]
-offset_left = 16.0
-offset_top = 8.0
-offset_right = 300.0
-offset_bottom = 28.0
-theme_override_fonts/font = SubResource("Font_bold")
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
-text = "現在のアクション (Tick 0000)"
-
-[node name="PhaseLabel" type="Label" parent="UI/ActionPanel"]
-offset_left = 320.0
-offset_top = 10.0
-offset_right = 560.0
-offset_bottom = 28.0
-theme_override_font_sizes/font_size = 11
-theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
-text = "フェーズ: IDLE  ·  並列処理: 0 / 4"
-
-[node name="EmptyState" type="Label" parent="UI/ActionPanel"]
-offset_left = 16.0
-offset_top = 40.0
-offset_right = 800.0
-offset_bottom = 100.0
-theme_override_font_sizes/font_size = 11
-theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
-autowrap_mode = 2
-text = "まだアクションがありません。Decide フェーズで LLM が決定した、注目すべきエージェント 5 名の行動(move / take / eat / give / attack / embrace / speak)と理由がここに表示されます。"
 
 [node name="LogPanel" type="Panel" parent="UI"]
 offset_left = 1124.0
@@ -547,6 +496,15 @@ offset_bottom = 26.0
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "OBSERVER MODE · NO-INTERVENTION"
+
+[node name="CostStatus" type="Label" parent="UI/FooterBar"]
+offset_left = 1110.0
+offset_top = 8.0
+offset_right = 1310.0
+offset_bottom = 26.0
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.820, 0.808, 0.784, 1)
+text = "$0.0000  ·  in 0.0k / out 0.0k tok"
 
 [node name="OpenLogBtn" type="Button" parent="UI/FooterBar"]
 offset_left = 1320.0

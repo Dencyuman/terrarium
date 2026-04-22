@@ -4,7 +4,7 @@ extends Node2D
 signal agent_clicked(agent_id: int)
 signal zoom_requested(rect_local: Rect2)
 
-const TILE_SIZE: int = 32
+const TILE_SIZE: int = 36
 const BADGE_RADIUS: int = 13
 const BADGE_FONT_SIZE: int = 16
 const MINIMAP_SCALE: float = 0.22
@@ -250,6 +250,9 @@ func _draw_agents() -> void:
 			agent.grid_pos.x * TILE_SIZE + TILE_SIZE / 2.0,
 			agent.grid_pos.y * TILE_SIZE + TILE_SIZE / 2.0
 		)
+		if not agent.is_alive():
+			_draw_dead_badge(agent, center)
+			continue
 		var color: Color = agent.badge_color()
 		draw_circle(center + Vector2(0, 2), BADGE_RADIUS, Color(0, 0, 0, 0.40))
 		draw_circle(center, BADGE_RADIUS, color)
@@ -257,6 +260,19 @@ func _draw_agents() -> void:
 		draw_arc(center, BADGE_RADIUS - 1, 0, TAU, 48, Color(1, 1, 1, 0.75), 1.0)
 		_draw_badge_label(agent.agent_name, center)
 		_draw_inventory_dots(agent, center)
+
+func _draw_dead_badge(agent: Agent, center: Vector2) -> void:
+	# 死体: desaturated grey + ✕ の重ね描き。吹き出し / 矢印 / inventory dots は描かない。
+	var base := Color(0.32, 0.32, 0.34, 0.85)
+	draw_circle(center + Vector2(0, 2), BADGE_RADIUS, Color(0, 0, 0, 0.30))
+	draw_circle(center, BADGE_RADIUS, base)
+	draw_arc(center, BADGE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.7), 1.5)
+	_draw_badge_label(agent.agent_name, center, Color(0.75, 0.72, 0.68, 0.75))
+	# ✕ 印(墓標代わり)
+	var r: float = BADGE_RADIUS - 3
+	var x_color := Color(0.88, 0.88, 0.88, 0.85)
+	draw_line(center + Vector2(-r, -r), center + Vector2(r, r), x_color, 2.0)
+	draw_line(center + Vector2(-r, r), center + Vector2(r, -r), x_color, 2.0)
 
 func _draw_inventory_dots(agent: Agent, badge_center: Vector2) -> void:
 	var cap: int = agent.inventory_capacity
@@ -275,7 +291,7 @@ func _draw_inventory_dots(agent: Agent, badge_center: Vector2) -> void:
 			draw_circle(pos, SLOT_DOT_RADIUS - 0.5, Color(0.30, 0.32, 0.36, 0.7))   # 空 = 暗灰
 			draw_arc(pos, SLOT_DOT_RADIUS - 0.5, 0, TAU, 16, Color(0.50, 0.52, 0.56, 0.5), 0.6)
 
-func _draw_badge_label(text: String, center: Vector2) -> void:
+func _draw_badge_label(text: String, center: Vector2, color: Color = Color(1, 1, 1, 0.98)) -> void:
 	var text_size: Vector2 = badge_font.get_string_size(
 		text,
 		HORIZONTAL_ALIGNMENT_CENTER,
@@ -295,7 +311,7 @@ func _draw_badge_label(text: String, center: Vector2) -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1,
 		BADGE_FONT_SIZE,
-		Color(1, 1, 1, 0.98)
+		color
 	)
 
 func _draw_speech_bubbles() -> void:
@@ -304,6 +320,8 @@ func _draw_speech_bubbles() -> void:
 	var non_selected: Array = []
 	var selected_target: Agent = null
 	for agent in agents:
+		if not agent.is_alive():
+			continue
 		if agent.last_speech.is_empty():
 			continue
 		if agent.last_speech_tick < 0:

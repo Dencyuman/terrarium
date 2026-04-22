@@ -1,8 +1,8 @@
 class_name EventChroniclePageView
 extends Node2D
 
-const VIEW_WIDTH: int = 836
-const VIEW_HEIGHT: int = 764
+const VIEW_WIDTH: int = 720
+const VIEW_HEIGHT: int = 720
 
 var agents: Array = []
 var font_bold: SystemFont

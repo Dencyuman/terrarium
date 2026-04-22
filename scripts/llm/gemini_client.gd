@@ -79,9 +79,10 @@ func _start_request(task: Dictionary) -> void:
 	var http := HTTPRequest.new()
 	add_child(http)
 	http.timeout = float(DEFAULT_TIMEOUT_SEC)
-	# Gemini の function declaration は {name, description, parameters}。
-	# PromptBuilder.tool_schema() から function.* を取り出してそのまま流用できる。
-	var schema := PromptBuilder.tool_schema()
+	# Gemini は oneOf / allOf / contains / maxContains / additionalProperties を
+	# parameters スキーマで受け付けないので、フラット版の tool_schema を使う。
+	# kind 別の required field は prompt と ResponseParser 側で担保する。
+	var schema := PromptBuilder.tool_schema_flat()
 	var fn: Dictionary = schema.get("function", {})
 	var act_decl := {
 		"name": fn.get("name", "act"),
@@ -134,8 +135,21 @@ func _await_and_finish(http: HTTPRequest, agent: Agent, agents: Array) -> void:
 	if res_code < 200 or res_code >= 300:
 		_finish_request(http, agent, agents, [Action.wait("http %d" % res_code)] as Array, false)
 		return
+	_emit_usage(body_text)
 	var actions: Array = _parse_response(body_text, agents)
 	_finish_request(http, agent, agents, actions, true)
+
+func _emit_usage(body_text: String) -> void:
+	var parsed = JSON.parse_string(body_text)
+	if not (parsed is Dictionary):
+		return
+	# Gemini: usageMetadata.promptTokenCount / candidatesTokenCount / thoughtsTokenCount
+	var usage = parsed.get("usageMetadata", null)
+	if not (usage is Dictionary):
+		return
+	var in_tok: int = int(usage.get("promptTokenCount", 0))
+	var out_tok: int = int(usage.get("candidatesTokenCount", 0)) + int(usage.get("thoughtsTokenCount", 0))
+	usage_recorded.emit(in_tok, out_tok)
 
 # Gemini response:
 # candidates[0].content.parts[] の中から functionCall ブロックを探して args を取り出す。

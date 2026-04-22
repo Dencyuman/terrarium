@@ -443,6 +443,9 @@ func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
 		"cause": cause,
 		"text": text,
 	})
+	# 加害者側の life_event: 自身が致死に至らせた事実
+	if killer != null:
+		killer.append_life_event(tick, "私が %s を殺した" % victim.agent_name)
 	# 視界内の生存者に broadcast(目撃証言)
 	for witness in agents:
 		if witness.id == victim.id:
@@ -456,6 +459,15 @@ func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
 		witness.recent_events.append("%s が倒れた" % victim.agent_name)
 		while witness.recent_events.size() > 5:
 			witness.recent_events.pop_front()
+		# 死亡目撃は長期記憶にも刻む
+		var life_text: String
+		if cause == "attack" and killer != null:
+			life_text = "%s が %s に殺されるのを見た" % [victim.agent_name, killer.agent_name]
+		elif cause == "starvation":
+			life_text = "%s が餓死するのを見た" % victim.agent_name
+		else:
+			life_text = "%s が倒れるのを見た" % victim.agent_name
+		witness.append_life_event(tick, life_text)
 
 func _apply_give(agent: Agent, action: Action) -> void:
 	var target := _get_agent_by_id(action.target_id)
@@ -483,6 +495,8 @@ func _apply_give(agent: Agent, action: Action) -> void:
 	agent.adjust_relation(target.id, 1, 0, tick)
 	agent.append_interaction(target.id, tick, "私が %s に食料を渡した" % target.agent_name)
 	target.append_interaction(agent.id, tick, "%s から食料を受け取った" % agent.agent_name)
+	agent.append_life_event(tick, "私が %s に食料を渡した" % target.agent_name)
+	target.append_life_event(tick, "%s から食料を受け取った" % agent.agent_name)
 	action.succeeded = true
 	_emit_event({
 		"tick": tick,
@@ -511,6 +525,8 @@ func _apply_attack(agent: Agent, action: Action) -> void:
 	action.succeeded = true
 	agent.append_interaction(target.id, tick, "私が %s を攻撃した" % target.agent_name)
 	target.append_interaction(agent.id, tick, "%s に攻撃された" % agent.agent_name)
+	agent.append_life_event(tick, "私が %s を攻撃した" % target.agent_name)
+	target.append_life_event(tick, "%s に攻撃された" % agent.agent_name)
 	_emit_event({
 		"tick": tick,
 		"kind": "attack",
@@ -530,6 +546,7 @@ func _apply_attack(agent: Agent, action: Action) -> void:
 		if dxw > VISION_RADIUS or dyw > VISION_RADIUS:
 			continue
 		witness.append_interaction(agent.id, tick, "%s が %s を攻撃するのを見た" % [agent.agent_name, target.agent_name])
+		witness.append_life_event(tick, "%s が %s を攻撃するのを見た" % [agent.agent_name, target.agent_name])
 	# 致死判定
 	if pre_health > 0 and target.health <= 0:
 		_emit_death(target, "attack", agent)
@@ -575,6 +592,8 @@ func _apply_embrace(agent: Agent, action: Action) -> void:
 	agent.adjust_relation(target.id, rel_affection_per_embrace, rel_trust_per_embrace, tick)
 	agent.append_interaction(target.id, tick, "私が %s を抱擁した" % target.agent_name)
 	target.append_interaction(agent.id, tick, "%s が私を抱擁した" % agent.agent_name)
+	agent.append_life_event(tick, "私が %s を抱擁した" % target.agent_name)
+	target.append_life_event(tick, "%s が私を抱擁した" % agent.agent_name)
 	action.succeeded = true
 	_emit_event({
 		"tick": tick,

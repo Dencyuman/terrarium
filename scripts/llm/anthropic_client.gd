@@ -129,8 +129,21 @@ func _await_and_finish(http: HTTPRequest, agent: Agent, agents: Array) -> void:
 	if res_code < 200 or res_code >= 300:
 		_finish_request(http, agent, agents, [Action.wait("http %d" % res_code)] as Array, false)
 		return
+	_emit_usage(body_text)
 	var actions: Array = _parse_response(body_text, agents)
 	_finish_request(http, agent, agents, actions, true)
+
+func _emit_usage(body_text: String) -> void:
+	var parsed = JSON.parse_string(body_text)
+	if not (parsed is Dictionary):
+		return
+	# Anthropic: usage.input_tokens / usage.output_tokens
+	var usage = parsed.get("usage", null)
+	if not (usage is Dictionary):
+		return
+	var in_tok: int = int(usage.get("input_tokens", 0))
+	var out_tok: int = int(usage.get("output_tokens", 0))
+	usage_recorded.emit(in_tok, out_tok)
 
 # content[] の中から tool_use ブロックを探し、その input(既にパース済み Dictionary)を流用。
 func _parse_response(body_text: String, agents: Array) -> Array:

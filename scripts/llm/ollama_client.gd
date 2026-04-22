@@ -134,8 +134,18 @@ func _await_and_finish(http: HTTPRequest, agent: Agent, agents: Array) -> void:
 	if res_code < 200 or res_code >= 300:
 		_finish_request(http, agent, agents, [Action.wait("http %d" % res_code)] as Array, false)
 		return
+	_emit_usage(body_text)
 	var actions: Array = _parse_response(body_text, agents)
 	_finish_request(http, agent, agents, actions, true)
+
+func _emit_usage(body_text: String) -> void:
+	var parsed = JSON.parse_string(body_text)
+	if not (parsed is Dictionary):
+		return
+	# Ollama /api/chat: prompt_eval_count / eval_count が root にある
+	var in_tok: int = int(parsed.get("prompt_eval_count", 0))
+	var out_tok: int = int(parsed.get("eval_count", 0))
+	usage_recorded.emit(in_tok, out_tok)
 
 # tool_calls(Ollama tool use 経路)を優先的に解釈し、無ければ従来の JSON content にフォールバック。
 func _parse_response(body_text: String, agents: Array) -> Array:

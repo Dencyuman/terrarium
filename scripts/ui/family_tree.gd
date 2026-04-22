@@ -1,8 +1,8 @@
 class_name FamilyTreeView
 extends Node2D
 
-const VIEW_WIDTH: int = 836
-const VIEW_HEIGHT: int = 764
+const VIEW_WIDTH: int = 720
+const VIEW_HEIGHT: int = 720
 const NODE_RADIUS: int = 18
 const LABEL_FONT_SIZE: int = 12
 

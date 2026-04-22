@@ -313,9 +313,10 @@ v0.1 は以下の Phase に分割して段階的に実装する。各 Phase 完�
 22. (運営): 物理成否の露出(Action.succeeded / failure_note)、failed action は log から除外・own_history には `(failed:...)` で残す
 23. (運営): エージェント視界に他者の `hunger`/`health` を載せる(身体状態の物理的可視性)
 24. (運営): 年代記へのイベント流入(give/attack/embrace/death)と UI 反映
-25. (運営): 死亡検知の最小実装(attack致命/飢餓)— 視覚的フェードや家系図記録は Phase 5 で完成
+25. (運営): 死亡検知の最小実装(attack致命/飢餓)。UI 上は dead agent を grey + ✕ 墓標で描画、吹き出し/矢印/inventory dots は停止。家系図記録は Phase 5 で完成
+26. **長期記憶 `life_events`**: 各エージェントに 20 件ロールの平坦タイムラインを持たせ、harness が高 salience 物理イベント成立時に追記する(自身の attack 実行 / 被害、give/receive、embrace の双方、視界内で目撃した attack・death)。`recent_events`(直近数 tick)と `interactions`(対相手ペアごと 8 件)の間を埋める中期記憶として機能し、死を目撃した観察者が数十 tick 後にもそれを覚えていて speak に混ぜ込める物理基盤を提供する。harness はテキストに意味付けせず、LLM が「覚えていて口に出す/出さない」を自律的に決める
 
-**確認事項**: エージェント同士が会話し、関係が変化し、グラフに反映される。反復的な give/embrace を繰り返すペアが relations の interactions に履歴を累積し、speak の中で特別な呼称を使うか(または使わないか)が観察できる。
+**確認事項**: エージェント同士が会話し、関係が変化し、グラフに反映される。反復的な give/embrace を繰り返すペアが relations の interactions に履歴を累積し、speak の中で特別な呼称を使うか(または使わないか)が観察できる。死の目撃者が数十 tick 後にも死者に言及する発話を自発的に行うかが観察できる(伝聞ゴシップの一次伝搬)。
 
 #### Phase 5: ライフサイクル (v0.1.0-phase5)
 

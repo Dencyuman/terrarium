@@ -8,6 +8,7 @@ const HUNGER_INITIAL: int = 80
 const HEALTH_INITIAL: int = 100
 const STAMINA_INITIAL: int = 100
 const DEFAULT_INVENTORY_CAPACITY: int = 3
+const LIFE_EVENTS_MAX: int = 20
 
 var id: int = 0
 var agent_name: String = ""
@@ -38,6 +39,9 @@ var last_speech_tick: int = -1
 var last_speech_target_ids: Array[int] = []
 var recent_events: Array[String] = []
 var own_history: Array[String] = []
+# 中期記憶: 高 salience 物理イベント(attack / death 目撃、give/embrace 関与)を
+# 平坦タイムラインで 20 件ロール保持。recent_events より長寿命、interactions より広範。
+var life_events: Array[String] = []
 
 func _init(id_: int = 0) -> void:
 	id = id_
@@ -103,6 +107,11 @@ func adjust_relation(other_id: int, d_affection: int, d_trust: int, current_tick
 	rel["affection"] = clamp(int(rel["affection"]) + d_affection, -100, 100)
 	rel["trust"] = clamp(int(rel["trust"]) + d_trust, 0, 100)
 	rel["last_tick"] = current_tick
+
+func append_life_event(current_tick: int, text: String) -> void:
+	life_events.append("t%d %s" % [current_tick, text])
+	while life_events.size() > LIFE_EVENTS_MAX:
+		life_events.pop_front()
 
 func append_interaction(other_id: int, current_tick: int, text: String, limit: int = 8) -> void:
 	# ハーネスが物理イベントを客観的に記録する自由テキスト。解釈はしない。

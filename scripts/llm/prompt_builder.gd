@@ -28,11 +28,11 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - "give": transfer one food item from your inventory to any agent within your vision (up to 3 tiles away in any direction — handed close-up or tossed). field `target`: the name of that agent. Fails silently if target is out of vision, you have nothing to give, or target's inventory is full.
 - "attack": strike an orthogonally adjacent agent. Their health decreases. field `target`.
 - "embrace": come into close contact with an orthogonally adjacent agent. No hunger/health effect, but physical touch alters your mutual relation. field `target`.
-- "speak": produce an utterance in Japanese colloquial (日本語口語体, one short sentence). field `text`. `target` is optional and may be:
-    - omitted → unaddressed (independent / to-whom-it-may-concern)
+- "speak": produce an utterance in Japanese colloquial (日本語口語体, one short sentence). field `text`. field `target`:
     - a single name string → addressed to one agent
     - an array of names → addressed to multiple agents at once
-  Speech physically propagates to every living agent within your vision radius, regardless of `target`.
+    - omitted → no one in particular (announcement / muttering to yourself)
+  All living agents within your vision radius hear the words regardless of `target`. But `target` is the *physical act of attribution*: the harness only updates the named agent(s)' `affection` and `trust` toward you from this utterance. Unaddressed speech leaves no relational trace — words heard but not tied to anyone. If you are speaking *to* someone (calling their name, asking them, threatening them, comforting them), set `target`; otherwise the harness records your words as uncommitted.
 - "wait": do nothing.
 
 # Same-tick physics
@@ -46,7 +46,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take a tile with no food, give to an agent out of vision, eat when no food available) silently fails and the remaining actions continue.
 
 # World physics
-- Coordinates: x grows east, y grows south. (0,0) is the NW corner.
+- Coordinates: x grows east, y grows south. (0,0) is the NW corner. The world is a finite **20 × 20** square: valid positions are x ∈ [0,19], y ∈ [0,19]. Past those indices is nothing — you cannot step there (`move` fails with `out_of_bounds`).
 - Water tiles are impassable. You cannot enter a tile already occupied by another living agent.
 - `hunger` ranges 0–100 (starts at 80). `health` ranges 0–100 (starts at 100). Each tick your `hunger` decreases. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
 - `stamina` ranges 0–100 (starts full). Every active action costs stamina: move (-2), take (-1), speak (-2), give (-2), embrace (-5, but the one embraced gains +3), attack (-12; the target also loses -3 from struggling). `eat` is free. `wait` restores stamina (+10). When stamina is below an action's cost, that action silently fails — you must rest (`wait`) to recover. Stamina and hunger are independent: you can be well-fed but exhausted, or rested but starving.
@@ -62,8 +62,11 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - `you.can_eat_now` = true iff eat would succeed this tick (inventory has food OR current tile has food).
 - `you.adjacent_food.<direction>` = true iff an orthogonally adjacent tile in that direction has food. If you want to eat food that is next to you, pair `move` in that direction with `take` or `eat` in the same tick — the actions execute in the order you list, so take/eat after move evaluates from the new position.
 - `you.adjacent_agents.<direction>` = name of the living agent in that direction, or null. give / attack / embrace require the target to be adjacent; use this to check before choosing those verbs.
+- `you.edge_touches.<direction>` = true iff a `move` in that direction (any of the 8 compass directions) would step off the map. Diagonals are marked true if the x or y axis would go out of bounds. Use this to avoid wasting a `move` on a dead end.
 - `vision[i].agent` entries include `hunger` and `health` of the visible agent. You can see at a glance who is hungry and who is wounded. This is physically observable (visible body condition).
+- `vision[i].corpse` marks a tile that holds the body of a dead agent (named). The corpse stays where the agent fell and does not move. give / attack / embrace cannot target it. You can still see and talk around it.
 - `own_history` entries marked `(failed:<reason>)` are actions you previously attempted but that the world did not allow. Avoid repeating the same impossible attempt.
+- `life_events` is your longer-retention memory of physically significant events you have lived through or witnessed firsthand (your own violence given or received, deaths you saw, gifts and embraces you were part of). It persists across many ticks — far longer than `recent_events` — so events that happened dozens of ticks ago can still be here. The harness records them as raw occurrences with a tick stamp; it does not mark them as "important" or tell you what to do with them. These are simply things you remember.
 
 # Output
 Call the `act` tool exactly once, passing this tick's action bundle as its arguments. Do not write any free text outside the tool call. `actions` may be empty (equivalent to a single wait). Omit fields that do not apply to a given action's `kind`.
@@ -73,6 +76,49 @@ All free-form output (`text`, `reason`) must be in **Japanese**. Enum values (`k
 
 static func system_prompt() -> String:
 	return SYSTEM_PROMPT
+
+# Gemini (generativelanguage.googleapis.com) 向けのフラットスキーマ。
+# Gemini の function declaration の parameters は OpenAPI 3.0 のサブセットで、
+# oneOf / allOf / contains / maxContains / additionalProperties / maxItems を
+# 受け付けない(現時点の v1beta API)。kind 別 required field はスキーマでは
+# 強制できないので、system prompt の verb 定義と ResponseParser の検証に委ねる。
+static func tool_schema_flat() -> Dictionary:
+	var action_item := {
+		"type": "object",
+		"properties": {
+			"kind": {"type": "string", "enum": [
+				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace"
+			]},
+			"direction": {"type": "string", "enum": [
+				"north", "south", "east", "west",
+				"northeast", "northwest", "southeast", "southwest"
+			], "description": "Required for move. For take, optional (omit = own tile)."},
+			"target": {"type": "string", "description": "Agent name. Required for give/attack/embrace. Optional for speak."},
+			"text": {"type": "string", "description": "Speech content (Japanese colloquial). Required for speak."}
+		},
+		"required": ["kind"]
+	}
+	return {
+		"type": "function",
+		"function": {
+			"name": "act",
+			"description": "Emit this tick's ordered bundle of physical actions for your agent.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"actions": {
+						"type": "array",
+						"items": action_item
+					},
+					"reason": {
+						"type": "string",
+						"description": "Short Japanese note about why (30 chars or less)."
+					}
+				},
+				"required": ["actions"]
+			}
+		}
+	}
 
 # Tool schema for structured output. Physics (per-kind limits, bundle cap) is declared
 # via JSON Schema 2020-12 `maxItems` + `contains`/`maxContains`. Not all providers enforce
@@ -213,6 +259,8 @@ static func build_user_prompt(agent: Agent, world: World, resources: ResourceFie
 		obj["own_history"] = agent.own_history
 	if agent.recent_events.size() > 0:
 		obj["recent_events"] = agent.recent_events
+	if agent.life_events.size() > 0:
+		obj["life_events"] = agent.life_events
 	var rels: Array = agent.top_relations(RELATIONS_LIMIT, agents, VISION_RADIUS)
 	if rels.size() > 0:
 		obj["relations"] = rels
@@ -241,6 +289,27 @@ static func _agent_state(agent: Agent, world: World, resources: ResourceField, a
 		"can_eat_now": food_here or agent.inventory.size() > 0,
 		"adjacent_food": _adjacent_food(agent, world, resources),
 		"adjacent_agents": _adjacent_agents(agent, world, agents),
+		"edge_touches": _edge_touches(agent, world),
+	}
+
+static func _edge_touches(agent: Agent, world: World) -> Dictionary:
+	# 8 方向について、その direction に move すると out_of_bounds になるかの事前判定。
+	# 斜め方向は x / y のどちらかが端に接していれば true。
+	var x: int = agent.grid_pos.x
+	var y: int = agent.grid_pos.y
+	var north: bool = y <= 0
+	var south: bool = y >= world.size - 1
+	var west: bool = x <= 0
+	var east: bool = x >= world.size - 1
+	return {
+		"north": north,
+		"south": south,
+		"west":  west,
+		"east":  east,
+		"northeast": north or east,
+		"northwest": north or west,
+		"southeast": south or east,
+		"southwest": south or west,
 	}
 
 static func _adjacent_food(agent: Agent, world: World, resources: ResourceField) -> Dictionary:
@@ -291,10 +360,9 @@ static func _adjacent_agents(agent: Agent, world: World, agents: Array) -> Dicti
 static func _vision(agent: Agent, world: World, resources: ResourceField, agents: Array) -> Array:
 	var out: Array = []
 	var by_pos: Dictionary = {}
+	# 生存者 / 死体どちらも vision に含める(遺体は物理的に見える物体として残る)
 	for other in agents:
 		if other.id == agent.id:
-			continue
-		if not other.is_alive():
 			continue
 		by_pos[other.grid_pos] = other
 	for dy in range(-VISION_RADIUS, VISION_RADIUS + 1):
@@ -319,11 +387,15 @@ static func _vision(agent: Agent, world: World, resources: ResourceField, agents
 				entry["food"] = true
 			if has_agent:
 				var other: Agent = by_pos[Vector2i(x, y)]
-				entry["agent"] = other.agent_name
-				entry["hunger"] = other.hunger
-				entry["health"] = other.health
-				entry["stamina"] = other.stamina
-				if absi(dx) + absi(dy) == 1:
-					entry["adjacent"] = true
+				if other.is_alive():
+					entry["agent"] = other.agent_name
+					entry["hunger"] = other.hunger
+					entry["health"] = other.health
+					entry["stamina"] = other.stamina
+					if absi(dx) + absi(dy) == 1:
+						entry["adjacent"] = true
+				else:
+					# 遺体: 物理的にその場に残る。give/attack/embrace の対象にはならない
+					entry["corpse"] = other.agent_name
 			out.append(entry)
 	return out

@@ -3,8 +3,8 @@ extends Node2D
 
 signal agent_clicked(agent_id: int)
 
-const VIEW_WIDTH: int = 836
-const VIEW_HEIGHT: int = 764
+const VIEW_WIDTH: int = 720
+const VIEW_HEIGHT: int = 720
 const NODE_RADIUS: int = 20
 const LABEL_FONT_SIZE: int = 13
 const EDGE_LABEL_FONT_SIZE: int = 10
