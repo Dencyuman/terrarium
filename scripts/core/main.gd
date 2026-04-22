@@ -54,6 +54,8 @@ func _ready() -> void:
 	match provider:
 		"anthropic":
 			ollama = AnthropicClient.new()
+		"gemini":
+			ollama = GeminiClient.new()
 		_:
 			ollama = OllamaClient.new()
 	add_child(ollama)
@@ -649,6 +651,7 @@ func _provider_display_name() -> String:
 	var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
 	match p:
 		"anthropic": return "Anthropic"
+		"gemini": return "Gemini"
 		_: return "Ollama"
 
 func _provider_target_display() -> String:
@@ -656,6 +659,8 @@ func _provider_target_display() -> String:
 	match p:
 		"anthropic":
 			return str(config["llm"].get("anthropic_model", "claude-haiku-4-5"))
+		"gemini":
+			return str(config["llm"].get("gemini_model", "gemini-3.1-flash-lite"))
 		_:
 			return _strip_scheme(str(config["llm"].get("endpoint", "")))
 
@@ -978,6 +983,9 @@ func _populate_ui(cfg: Dictionary) -> void:
 		var suffix: String
 		if p == "anthropic":
 			model_name = str(cfg["llm"].get("anthropic_model", ""))
+			suffix = ""
+		elif p == "gemini":
+			model_name = str(cfg["llm"].get("gemini_model", ""))
 			suffix = ""
 		else:
 			model_name = str(cfg["llm"].get("model", ""))
