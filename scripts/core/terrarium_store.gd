@@ -65,9 +65,14 @@ func _ensure_schema() -> void:
 			model TEXT,
 			input_tokens INTEGER DEFAULT 0,
 			output_tokens INTEGER DEFAULT 0,
-			cost_usd REAL DEFAULT 0.0
+			cost_usd REAL DEFAULT 0.0,
+			state_json TEXT
 		)
 	""")
+	# 既存 DB 用のマイグレーション: state_json カラムが無い場合は追加。
+	# godot-sqlite は失敗時に error_message をセットし false を返すだけなので、
+	# 既に存在する場合はそのまま無視する。
+	db.query("ALTER TABLE runs ADD COLUMN state_json TEXT")
 	db.query("""
 		CREATE TABLE IF NOT EXISTS events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -210,6 +215,43 @@ func start_run(terrarium_id: int, provider: String, model: String) -> int:
 	current_run_id = int(res[0]["id"]) if res.size() > 0 else -1
 	print("[TerrariumStore] started run id=%d (terrarium=%d, %s/%s)" % [current_run_id, terrarium_id, provider, model])
 	return current_run_id
+
+func find_active_run(terrarium_id: int) -> int:
+	# ended_at が NULL の最新 run を返す。無ければ -1。
+	if db == null:
+		return -1
+	db.query("""
+		SELECT id FROM runs
+		WHERE terrarium_id = %d AND (ended_at IS NULL OR ended_at = '')
+		ORDER BY id DESC LIMIT 1
+	""" % terrarium_id)
+	if db.query_result.is_empty():
+		return -1
+	return int(db.query_result[0].get("id", -1))
+
+func attach_run(run_id: int, terrarium_title: String) -> void:
+	# 再開時に既存 run_id を引き継ぐ
+	current_run_id = run_id
+	current_terrarium_title = terrarium_title
+
+func save_state(state: Dictionary) -> void:
+	if current_run_id < 0 or db == null:
+		return
+	db.update_rows("runs", "id = %d" % current_run_id, {
+		"state_json": JSON.stringify(state),
+	})
+
+func load_state(run_id: int) -> Dictionary:
+	if db == null:
+		return {}
+	var rows: Array = db.select_rows("runs", "id = %d" % run_id, ["state_json"])
+	if rows.is_empty():
+		return {}
+	var s: String = str(rows[0].get("state_json", ""))
+	if s == "":
+		return {}
+	var parsed = JSON.parse_string(s)
+	return parsed if parsed is Dictionary else {}
 
 func end_run(final_tick: int, final_alive: int, final_total: int, in_tokens: int, out_tokens: int, cost_usd: float) -> void:
 	if current_run_id < 0 or db == null:

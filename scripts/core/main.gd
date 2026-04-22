@@ -113,10 +113,19 @@ func _ready() -> void:
 	add_child(ollama)
 	ollama.configure(config["llm"])
 	print("[LLM] provider=%s" % provider)
-	# 実行中 run 開始(最初の tick が走る前に run 行を作る)
+	# run 開始 / 再開の判定:
+	#   既存の ended_at が NULL の run が該当テラリウムにある → 再開(state_json から復元)
+	#   無い → 新規 run 作成 + 初期スポーン
+	var resumed: bool = false
 	if run_logger != null and current_terrarium_id >= 0:
 		var model_id: String = _current_model_id()
-		run_logger.start_run(current_terrarium_id, provider, model_id)
+		var active_id: int = run_logger.find_active_run(current_terrarium_id)
+		if active_id > 0:
+			run_logger.attach_run(active_id, run_logger.current_terrarium_title)
+			resumed = true
+			print("[Main] resuming run #%d" % active_id)
+		else:
+			run_logger.start_run(current_terrarium_id, provider, model_id)
 	ollama.health_changed.connect(_on_health_changed)
 	ollama.batch_progress.connect(_on_decide_progress)
 	ollama.agent_decided.connect(_on_agent_decided_incremental)
@@ -125,6 +134,11 @@ func _ready() -> void:
 	ollama.usage_recorded.connect(_on_usage_recorded)
 
 	_initialize_simulation(names_data)
+	# 再開時はスナップショットから上書き復元する
+	if resumed and run_logger != null:
+		var snap: Dictionary = run_logger.load_state(run_logger.current_run_id)
+		if not snap.is_empty():
+			_apply_state_snapshot(snap)
 	_wire_views()
 	_wire_tabs()
 	_wire_playback()
@@ -387,12 +401,126 @@ func _on_reset_pressed() -> void:
 		run_logger.start_run(current_terrarium_id, p, _current_model_id())
 
 func _on_back_to_top_pressed() -> void:
+	# テラリウム一覧に戻るときは run を「中断」扱いにする。ended_at は立てず、
+	# state_json に現在状態を保存 → 次回起動で resume できる。
 	running = false
-	_end_current_run()
-	if run_logger != null:
+	if run_logger != null and scheduler != null:
+		var alive_count: int = 0
+		for a in agents:
+			if a.is_alive():
+				alive_count += 1
+		run_logger.update_run_stats(scheduler.tick, alive_count, agents.size(), total_input_tokens, total_output_tokens, total_cost_usd)
+		run_logger.save_state(_build_state_snapshot())
 		run_logger.close()
 	GameContext.selected_terrarium_id = -1
 	get_tree().change_scene_to_file("res://scenes/TopPage.tscn")
+
+func _build_state_snapshot() -> Dictionary:
+	var agent_dumps: Array = []
+	for a in agents:
+		agent_dumps.append(_serialize_agent(a))
+	var rng_state: int = 0
+	if scheduler != null and scheduler.rng != null:
+		rng_state = int(scheduler.rng.state)
+	return {
+		"tick": scheduler.tick if scheduler != null else 0,
+		"day": scheduler.day if scheduler != null else 0,
+		"rng_state": rng_state,
+		"agents": agent_dumps,
+		"resources_food": resources.food if resources != null else [],
+	}
+
+func _serialize_agent(a: Agent) -> Dictionary:
+	return {
+		"id": a.id,
+		"agent_name": a.agent_name,
+		"romaji": a.romaji,
+		"gender": a.gender,
+		"cooperative": a.cooperative,
+		"aggressive": a.aggressive,
+		"curious": a.curious,
+		"grid_pos": [a.grid_pos.x, a.grid_pos.y],
+		"hunger": a.hunger,
+		"health": a.health,
+		"stamina": a.stamina,
+		"inventory": a.inventory.duplicate(),
+		"inventory_capacity": a.inventory_capacity,
+		"relations": a.relations.duplicate(true),
+		"last_action_kind": a.last_action_kind,
+		"last_action_reason": a.last_action_reason,
+		"last_speech": a.last_speech,
+		"last_speech_tick": a.last_speech_tick,
+		"last_speech_target_ids": a.last_speech_target_ids.duplicate(),
+		"recent_events": a.recent_events.duplicate(),
+		"own_history": a.own_history.duplicate(),
+		"life_events": a.life_events.duplicate(),
+	}
+
+func _apply_state_snapshot(snap: Dictionary) -> void:
+	if scheduler != null:
+		scheduler.tick = int(snap.get("tick", 0))
+		scheduler.day = int(snap.get("day", 0))
+		if scheduler.rng != null:
+			scheduler.rng.state = int(snap.get("rng_state", scheduler.rng.state))
+	# 既存 agents リストは _spawn_agents で名前/性格などは正しい初期値になっている。
+	# ここでは動的状態(pos/hunger/health/stamina/inventory/relations/events等)だけ上書き。
+	var agent_dumps = snap.get("agents", [])
+	if agent_dumps is Array:
+		var by_id: Dictionary = {}
+		for a in agents:
+			by_id[a.id] = a
+		for dump in agent_dumps:
+			if not (dump is Dictionary):
+				continue
+			var aid: int = int(dump.get("id", -1))
+			if not by_id.has(aid):
+				continue
+			_deserialize_agent_state(by_id[aid], dump)
+	# resources.food を上書き(2D bool array)
+	var food = snap.get("resources_food", null)
+	if food is Array and resources != null and food.size() == resources.size:
+		resources.food = food
+
+func _deserialize_agent_state(a: Agent, dump: Dictionary) -> void:
+	var pos_arr = dump.get("grid_pos", null)
+	if pos_arr is Array and pos_arr.size() >= 2:
+		a.grid_pos = Vector2i(int(pos_arr[0]), int(pos_arr[1]))
+	a.hunger = int(dump.get("hunger", a.hunger))
+	a.health = int(dump.get("health", a.health))
+	a.stamina = int(dump.get("stamina", a.stamina))
+	var inv = dump.get("inventory", [])
+	if inv is Array:
+		a.inventory.clear()
+		for item in inv:
+			a.inventory.append(str(item))
+	a.inventory_capacity = int(dump.get("inventory_capacity", a.inventory_capacity))
+	# relations: JSON round-trip で int キーが文字列化するので復元時に int に戻す
+	var rels = dump.get("relations", {})
+	if rels is Dictionary:
+		a.relations = {}
+		for k in rels.keys():
+			a.relations[int(str(k))] = rels[k]
+	a.last_action_kind = int(dump.get("last_action_kind", a.last_action_kind))
+	a.last_action_reason = str(dump.get("last_action_reason", a.last_action_reason))
+	a.last_speech = str(dump.get("last_speech", ""))
+	a.last_speech_tick = int(dump.get("last_speech_tick", -1))
+	var tids = dump.get("last_speech_target_ids", [])
+	a.last_speech_target_ids = []
+	if tids is Array:
+		for t in tids:
+			a.last_speech_target_ids.append(int(t))
+	var re = dump.get("recent_events", [])
+	a.recent_events = []
+	if re is Array:
+		for e in re: a.recent_events.append(str(e))
+	var oh = dump.get("own_history", [])
+	a.own_history = []
+	if oh is Array:
+		for e in oh: a.own_history.append(str(e))
+	var le = dump.get("life_events", [])
+	a.life_events = []
+	if le is Array:
+		for e in le: a.life_events.append(str(e))
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:
@@ -405,7 +533,15 @@ func _end_current_run() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
-		_end_current_run()
+		# アプリ終了時は run を「中断」扱いで閉じる(ended_at は立てない)。
+		# 次回起動で同じテラリウムを選べば resume できる。
+		if run_logger != null and scheduler != null:
+			var alive_count: int = 0
+			for a in agents:
+				if a.is_alive():
+					alive_count += 1
+			run_logger.update_run_stats(scheduler.tick, alive_count, agents.size(), total_input_tokens, total_output_tokens, total_cost_usd)
+			run_logger.save_state(_build_state_snapshot())
 		if run_logger != null:
 			run_logger.close()
 
@@ -446,6 +582,8 @@ func _on_tick_completed_with_logging(tick_no: int) -> void:
 	run_logger.log_tick_boundary(tick_no, scheduler.day, alive)
 	# run 行の集計カラムを tick 境界で反映(途中で SQL 叩いても最新コストが見える)
 	run_logger.update_run_stats(tick_no, alive, agents.size(), total_input_tokens, total_output_tokens, total_cost_usd)
+	# 中断再開用の状態スナップショットも tick 境界で保存
+	run_logger.save_state(_build_state_snapshot())
 
 func _on_event_emitted(event: Dictionary) -> void:
 	chronicle_entries.push_back(event)
