@@ -3,8 +3,11 @@ extends RefCounted
 
 const HUNGER_MAX: int = 100
 const HEALTH_MAX: int = 100
+const STAMINA_MAX: int = 100
 const HUNGER_INITIAL: int = 80
 const HEALTH_INITIAL: int = 100
+const STAMINA_INITIAL: int = 100
+const DEFAULT_INVENTORY_CAPACITY: int = 3
 
 var id: int = 0
 var agent_name: String = ""
@@ -16,15 +19,25 @@ var curious: int = 50
 var grid_pos: Vector2i = Vector2i.ZERO
 var hunger: int = HUNGER_INITIAL
 var health: int = HEALTH_INITIAL
+var stamina: int = STAMINA_INITIAL
 
-# Phase 3 でセットされるローリング情報(UI 表示/プロンプトで参照)
-var last_action_kind: int = 0   # Action.Kind
+# 所持品(v0.1 は食料のみ扱う。文字列 "food" をスロット占有の単位とする)
+var inventory: Array[String] = []
+var inventory_capacity: int = DEFAULT_INVENTORY_CAPACITY
+
+# 他エージェントごとの関係(id → {affection, trust, last_tick})
+# affection: -100..+100 (好嫌)
+# trust:      0..100    (信頼、中立 50 スタート)
+var relations: Dictionary = {}
+
+# Phase 3 で導入、短期記憶
+var last_action_kind: int = 0
 var last_action_reason: String = ""
 var last_speech: String = ""
 var last_speech_tick: int = -1
-var last_speech_target_ids: Array[int] = []   # 空 = 独り言 / 不特定
-var recent_events: Array[String] = []   # 自分が観測した最近 5 件
-var own_history: Array[String] = []      # 自分の直近 5 tick の行動記録(繰り返し抑制用)
+var last_speech_target_ids: Array[int] = []
+var recent_events: Array[String] = []
+var own_history: Array[String] = []
 
 func _init(id_: int = 0) -> void:
 	id = id_
@@ -37,8 +50,103 @@ func apply_tick_decay(base_cost: int = 1, starving_drain: int = 2) -> void:
 	if hunger == 0:
 		health = max(0, health - starving_drain)
 
-func eat(amount: int) -> void:
+func eat_amount(amount: int) -> void:
 	hunger = min(HUNGER_MAX, hunger + amount)
+
+func spend_stamina(amount: int) -> void:
+	stamina = max(0, stamina - amount)
+
+func gain_stamina(amount: int) -> void:
+	stamina = min(STAMINA_MAX, stamina + amount)
+
+func can_afford_stamina(cost: int) -> bool:
+	return stamina >= cost
+
+# --- inventory ---
+
+func inventory_has_space() -> bool:
+	return inventory.size() < inventory_capacity
+
+func inventory_add(item: String) -> bool:
+	if not inventory_has_space():
+		return false
+	inventory.append(item)
+	return true
+
+func inventory_remove_first(item: String) -> bool:
+	var idx := inventory.find(item)
+	if idx < 0:
+		return false
+	inventory.remove_at(idx)
+	return true
+
+func inventory_count(item: String) -> int:
+	var n := 0
+	for x in inventory:
+		if x == item:
+			n += 1
+	return n
+
+# --- relations ---
+
+func ensure_relation(other_id: int, current_tick: int) -> Dictionary:
+	if not relations.has(other_id):
+		relations[other_id] = {
+			"affection": 0,
+			"trust": 50,
+			"last_tick": current_tick,
+		}
+	return relations[other_id]
+
+func adjust_relation(other_id: int, d_affection: int, d_trust: int, current_tick: int) -> void:
+	var rel: Dictionary = ensure_relation(other_id, current_tick)
+	rel["affection"] = clamp(int(rel["affection"]) + d_affection, -100, 100)
+	rel["trust"] = clamp(int(rel["trust"]) + d_trust, 0, 100)
+	rel["last_tick"] = current_tick
+
+func append_interaction(other_id: int, current_tick: int, text: String, limit: int = 8) -> void:
+	# ハーネスが物理イベントを客観的に記録する自由テキスト。解釈はしない。
+	var rel: Dictionary = ensure_relation(other_id, current_tick)
+	if not rel.has("interactions"):
+		rel["interactions"] = [] as Array[String]
+	var arr: Array = rel["interactions"]
+	arr.append("t%d %s" % [current_tick, text])
+	while arr.size() > limit:
+		arr.pop_front()
+	rel["interactions"] = arr
+
+# 上位 N 件の関係(|affection| 降順)をプロンプト/UI 用に返す
+# vision_radius を指定すると、自分の視界内にその相手がいるかのフラグも載せる。
+func top_relations(limit: int, agents: Array, vision_radius: int = 3) -> Array:
+	var entries: Array = []
+	for other_id in relations.keys():
+		var rel: Dictionary = relations[other_id]
+		var name := ""
+		var other_agent: Agent = null
+		for a in agents:
+			if a.id == other_id:
+				name = a.agent_name
+				other_agent = a
+				break
+		if name == "":
+			continue
+		var interactions: Array = rel.get("interactions", [])
+		var entry: Dictionary = {
+			"name": name,
+			"affection": int(rel["affection"]),
+			"trust": int(rel["trust"]),
+			"interactions": interactions.duplicate(),
+		}
+		if other_agent != null:
+			var dx: int = absi(other_agent.grid_pos.x - grid_pos.x)
+			var dy: int = absi(other_agent.grid_pos.y - grid_pos.y)
+			entry["in_vision"] = (dx <= vision_radius and dy <= vision_radius) and other_agent.is_alive()
+			entry["alive"] = other_agent.is_alive()
+		entries.append(entry)
+	entries.sort_custom(func(a, b): return abs(int(a["affection"])) > abs(int(b["affection"])))
+	if entries.size() > limit:
+		entries.resize(limit)
+	return entries
 
 func dominant_axis() -> String:
 	if _is_balanced():
@@ -55,7 +163,6 @@ func _is_balanced() -> bool:
 		and abs(curious - 50) <= 10
 
 func badge_color() -> Color:
-	# design.md §3.9.2 の色割当。band 内で id ハッシュから微調整。
 	var band := _color_band(dominant_axis())
 	var shift := fmod(float(id) * 0.137, 1.0)
 	var hue := fmod(band[0] + (band[1] - band[0]) * shift, 1.0)

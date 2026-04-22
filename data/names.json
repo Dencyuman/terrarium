@@ -1,12 +1,12 @@
 {
   "_comment": "v0.1 初期 20 体の名前・性別・性格タグ。Phase 1 では静的配置に使用、Phase 2 以降でシードから選出する運用に移行予定。",
   "agents": [
-    { "name": "樅", "romaji": "Momi",    "gender": "male",   "cooperative": 35, "aggressive": 80, "curious": 40 },
+    { "name": "樅", "romaji": "Momi",    "gender": "male",   "cooperative": 15, "aggressive": 95, "curious": 30 },
     { "name": "椎", "romaji": "Shii",    "gender": "female", "cooperative": 75, "aggressive": 25, "curious": 55 },
     { "name": "桐", "romaji": "Kiri",    "gender": "male",   "cooperative": 60, "aggressive": 45, "curious": 70 },
     { "name": "柊", "romaji": "Hiiragi", "gender": "female", "cooperative": 50, "aggressive": 55, "curious": 60 },
     { "name": "楓", "romaji": "Kaede",   "gender": "female", "cooperative": 80, "aggressive": 20, "curious": 65 },
-    { "name": "蓮", "romaji": "Ren",     "gender": "male",   "cooperative": 45, "aggressive": 70, "curious": 35 },
+    { "name": "蓮", "romaji": "Ren",     "gender": "male",   "cooperative": 25, "aggressive": 88, "curious": 30 },
     { "name": "霞", "romaji": "Kasumi",  "gender": "female", "cooperative": 55, "aggressive": 30, "curious": 85 },
     { "name": "朔", "romaji": "Saku",    "gender": "male",   "cooperative": 80, "aggressive": 35, "curious": 50 },
     { "name": "藤", "romaji": "Fuji",    "gender": "male",   "cooperative": 65, "aggressive": 40, "curious": 75 },
@@ -19,7 +19,7 @@
     { "name": "榛", "romaji": "Hashibami","gender": "male",  "cooperative": 55, "aggressive": 45, "curious": 65 },
     { "name": "橘", "romaji": "Tachibana","gender": "male",  "cooperative": 65, "aggressive": 35, "curious": 70 },
     { "name": "梓", "romaji": "Azusa",   "gender": "female", "cooperative": 70, "aggressive": 30, "curious": 80 },
-    { "name": "茜", "romaji": "Akane",   "gender": "female", "cooperative": 45, "aggressive": 70, "curious": 55 },
+    { "name": "茜", "romaji": "Akane",   "gender": "female", "cooperative": 20, "aggressive": 90, "curious": 50 },
     { "name": "槿", "romaji": "Mukuge",  "gender": "male",   "cooperative": 60, "aggressive": 55, "curious": 60 }
   ]
 }

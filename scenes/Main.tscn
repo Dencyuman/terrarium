@@ -290,7 +290,7 @@ tooltip_text = "ズームを 1:1 に戻す"
 offset_left = 8.0
 offset_top = 96.0
 offset_right = 276.0
-offset_bottom = 540.0
+offset_bottom = 420.0
 theme_override_styles/panel = SubResource("Sb_panel")
 
 [node name="Header" type="Label" parent="UI/AgentListPanel"]
@@ -310,13 +310,13 @@ offset_right = 252.0
 offset_bottom = 46.0
 theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
-text = "年齢降順 · 生存中 · Phase 1 静的リスト"
+text = "生存中 · id 昇順"
 
 [node name="AgentListBody" type="RichTextLabel" parent="UI/AgentListPanel"]
 offset_left = 12.0
 offset_top = 52.0
 offset_right = 260.0
-offset_bottom = 432.0
+offset_bottom = 316.0
 theme_override_font_sizes/normal_font_size = 12
 theme_override_colors/default_color = Color(0.820, 0.808, 0.784, 1)
 bbcode_enabled = true
@@ -326,7 +326,7 @@ fit_content = false
 
 [node name="AgentDetailPanel" type="Panel" parent="UI"]
 offset_left = 8.0
-offset_top = 548.0
+offset_top = 428.0
 offset_right = 276.0
 offset_bottom = 860.0
 theme_override_styles/panel = SubResource("Sb_panel")
@@ -385,7 +385,7 @@ offset_bottom = 100.0
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
-text = "▶ PLAY を押すとシミュレーションが開始されます。各 tick の Decide フェーズで LLM が決定した、注目すべきエージェント 5 名の行動と理由がここに表示されます。"
+text = "まだアクションがありません。Decide フェーズで LLM が決定した、注目すべきエージェント 5 名の行動(move / take / eat / give / attack / embrace / speak)と理由がここに表示されます。"
 
 [node name="LogPanel" type="Panel" parent="UI"]
 offset_left = 1124.0
@@ -411,7 +411,7 @@ offset_right = 292.0
 offset_bottom = 46.0
 theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
-text = "move / take / speak · 最新 50 件 · LIVE"
+text = "直近 50 件 · LIVE"
 
 [node name="EmptyState" type="Label" parent="UI/LogPanel"]
 offset_left = 16.0
@@ -421,18 +421,21 @@ offset_bottom = 380.0
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
-text = "▶ PLAY を押すとここに各エージェントのアクション(move / take / speak)が tick 順で流れます。発話(speak)はハイライト表示されます。"
+text = "まだログがありません。tick が進むと move / take / eat / give / attack / embrace / speak の観察ログが流れます。"
 
 [node name="LogBody" type="RichTextLabel" parent="UI/LogPanel"]
+clip_contents = true
 offset_left = 12.0
 offset_top = 54.0
-offset_right = 292.0
+offset_right = 296.0
 offset_bottom = 388.0
 theme_override_font_sizes/normal_font_size = 11
 theme_override_colors/default_color = Color(0.820, 0.808, 0.784, 1)
 bbcode_enabled = true
+fit_content = false
 scroll_active = true
 scroll_following = true
+autowrap_mode = 3
 visible = false
 
 [node name="EventChroniclePanel" type="Panel" parent="UI"]
@@ -506,12 +509,10 @@ autowrap_mode = 2
 text = "世代交代・死亡・誕生・共有オブジェクト生成などの重大イベントがここに蓄積されます。
 
 · 💫 誕生     (Phase 5+)
-· 🕊 死亡     (Phase 5+)
+· 🕊 死亡     (Phase 4+)
 · 💢 戦闘     (Phase 4+)
 · 📜 共有物    (Phase 7+)
-· 🎓 教育     (Phase 6+)
-
-Phase 1 は枠のみ配置。"
+· 🎓 教育     (Phase 6+)"
 
 [node name="FooterBar" type="Panel" parent="UI"]
 offset_left = 0.0

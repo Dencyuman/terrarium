@@ -3,6 +3,8 @@ extends RefCounted
 
 signal phase_changed(phase_name: String)
 signal tick_completed(tick_no: int)
+signal event_emitted(event: Dictionary)   # 年代記用の重大イベント
+signal action_applied(agent_id: int, action: Action, snapshot: Dictionary)   # 1 アクション適用直後の状態
 
 enum Phase { IDLE, OBSERVE, DECIDE, COMMIT }
 
@@ -16,14 +18,19 @@ const DIRS_4: Array[Vector2i] = [
 const VISION_RADIUS: int = 3
 
 # 1 tick 内で同時実行できるアクションの物理的上限。
-# - 同 kind は 1 回(身体は 1 つ、同時に 2 歩や 2 発話は不可)
-# - 合計 3 個(1 tick で詰め込める動作の限界)
+# - 声は 1 つ(speak は 1 回)
+# - 歩は連続可能(move 複数)、身体接触系や食事系も連続可能
+# - 合計 5 個(1 tick で詰め込める動作の限界)
 # 実行順は harness では決めない。エージェントが指定した配列の順にそのまま流す。
-const TICK_MAX_ACTIONS: int = 3
+const TICK_MAX_ACTIONS: int = 5
 const PER_KIND_MAX := {
 	Action.Kind.WAIT: 1,
-	Action.Kind.MOVE: 1,
-	Action.Kind.TAKE: 1,
+	Action.Kind.MOVE: 3,
+	Action.Kind.TAKE: 2,
+	Action.Kind.EAT: 2,
+	Action.Kind.GIVE: 2,
+	Action.Kind.ATTACK: 2,
+	Action.Kind.EMBRACE: 2,
 	Action.Kind.SPEAK: 1,
 }
 
@@ -41,7 +48,31 @@ var phase: int = Phase.IDLE
 var tick_base_hunger: int = 1
 var move_hunger: int = 2
 var speak_hunger: int = 1
+var eat_hunger_restore: int = 25
+var attack_health_damage: int = 15
 var starving_health_drain: int = 2
+# stamina 関連
+var move_stamina: int = 2
+var take_stamina: int = 1
+var eat_stamina: int = 0
+var give_stamina: int = 2
+var attack_stamina_cost: int = 12
+var attack_stamina_target_drain: int = 3
+var embrace_stamina_cost: int = 5
+var embrace_stamina_gift: int = 3
+var speak_stamina: int = 2
+var wait_stamina_restore: int = 10
+
+# 関係性の更新量(config.json の relations セクションで上書き可能)
+var rel_affection_per_give: int = 10
+var rel_trust_per_give: int = 5
+var rel_affection_per_attack: int = -20
+var rel_trust_per_attack: int = -15
+var rel_affection_per_embrace: int = 5
+var rel_trust_per_embrace: int = 2
+var rel_affection_per_speak_addressed: int = 1
+var rel_trust_per_speak_addressed: int = 1
+var rel_affection_per_witness_attack: int = -5
 
 func _init(world_: World, resources_: ResourceField, agents_: Array, seed_: int, tick_per_day_: int = 10) -> void:
 	world = world_
@@ -55,7 +86,30 @@ func configure_costs(cfg: Dictionary) -> void:
 	tick_base_hunger = int(cfg.get("tick_base_hunger", tick_base_hunger))
 	move_hunger = int(cfg.get("move_hunger", move_hunger))
 	speak_hunger = int(cfg.get("speak_hunger", speak_hunger))
+	eat_hunger_restore = int(cfg.get("eat_hunger_restore", eat_hunger_restore))
+	attack_health_damage = int(cfg.get("attack_health_damage", attack_health_damage))
 	starving_health_drain = int(cfg.get("starving_health_drain", starving_health_drain))
+	move_stamina = int(cfg.get("move_stamina", move_stamina))
+	take_stamina = int(cfg.get("take_stamina", take_stamina))
+	eat_stamina = int(cfg.get("eat_stamina", eat_stamina))
+	give_stamina = int(cfg.get("give_stamina", give_stamina))
+	attack_stamina_cost = int(cfg.get("attack_stamina_cost", attack_stamina_cost))
+	attack_stamina_target_drain = int(cfg.get("attack_stamina_target_drain", attack_stamina_target_drain))
+	embrace_stamina_cost = int(cfg.get("embrace_stamina_cost", embrace_stamina_cost))
+	embrace_stamina_gift = int(cfg.get("embrace_stamina_gift", embrace_stamina_gift))
+	speak_stamina = int(cfg.get("speak_stamina", speak_stamina))
+	wait_stamina_restore = int(cfg.get("wait_stamina_restore", wait_stamina_restore))
+
+func configure_relations(cfg: Dictionary) -> void:
+	rel_affection_per_give = int(cfg.get("affection_per_give", rel_affection_per_give))
+	rel_trust_per_give = int(cfg.get("trust_per_give", rel_trust_per_give))
+	rel_affection_per_attack = int(cfg.get("affection_per_attack", rel_affection_per_attack))
+	rel_trust_per_attack = int(cfg.get("trust_per_attack", rel_trust_per_attack))
+	rel_affection_per_embrace = int(cfg.get("affection_per_embrace", rel_affection_per_embrace))
+	rel_trust_per_embrace = int(cfg.get("trust_per_embrace", rel_trust_per_embrace))
+	rel_affection_per_speak_addressed = int(cfg.get("affection_per_speak_addressed", rel_affection_per_speak_addressed))
+	rel_trust_per_speak_addressed = int(cfg.get("trust_per_speak_addressed", rel_trust_per_speak_addressed))
+	rel_affection_per_witness_attack = int(cfg.get("affection_per_witness_attack", rel_affection_per_witness_attack))
 
 func step() -> void:
 	# Phase 2 互換の同期 step。Phase 3 以降は Main が
@@ -140,6 +194,14 @@ func apply_bundle_for_agent(agent: Agent, bundle: Array) -> void:
 			agent.last_speech = action.speech_text
 			agent.last_speech_tick = tick
 			agent.last_speech_target_ids = action.speech_target_ids
+		# per-action スナップショットを emit
+		action_applied.emit(agent.id, action, {
+			"hunger": agent.hunger,
+			"health": agent.health,
+			"stamina": agent.stamina,
+			"pos": [agent.grid_pos.x, agent.grid_pos.y],
+			"inventory_size": agent.inventory.size(),
+		})
 	if ordered.is_empty():
 		agent.last_action_kind = Action.Kind.WAIT
 		agent.last_action_reason = ""
@@ -150,7 +212,10 @@ func apply_bundle_for_agent(agent: Agent, bundle: Array) -> void:
 	agent.own_history.append("t%d %s" % [tick, summary])
 	while agent.own_history.size() > 5:
 		agent.own_history.pop_front()
+	var pre_health: int = agent.health
 	agent.apply_tick_decay(tick_base_hunger, starving_health_drain)
+	if pre_health > 0 and agent.health <= 0:
+		_emit_death(agent, "starvation", null)
 
 func finalize_tick() -> void:
 	# tick 境界で resource 再生と day 進行を処理。LLM 経路で apply_bundle_for_agent を
@@ -244,29 +309,274 @@ func _random_passable_dir(pos: Vector2i) -> Vector2i:
 func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 	match action.kind:
 		Action.Kind.WAIT:
+			# 休息。stamina を回復(max を超えない)。
+			agent.gain_stamina(wait_stamina_restore)
+			action.succeeded = true
 			return
 		Action.Kind.TAKE:
-			# take は成功時のみ +food_nutrition。失敗(食料なし)はコストもゼロ。
+			if not agent.inventory_has_space():
+				action.failure_note = "inventory_full"
+				return
+			if not agent.can_afford_stamina(take_stamina):
+				action.failure_note = "exhausted"
+				return
 			var nut: int = resources.take(agent.grid_pos.x, agent.grid_pos.y)
 			if nut > 0:
-				agent.eat(nut)
+				agent.inventory_add("food")
+				agent.spend_stamina(take_stamina)
+				action.succeeded = true
+			else:
+				action.failure_note = "no_food_here"
+		Action.Kind.EAT:
+			# eat は stamina コストが 0 なので疲労時でも食える(生存権)。
+			if agent.inventory_remove_first("food"):
+				agent.eat_amount(eat_hunger_restore)
+				agent.spend_stamina(eat_stamina)
+				action.succeeded = true
+			else:
+				var nut: int = resources.take(agent.grid_pos.x, agent.grid_pos.y)
+				if nut > 0:
+					agent.eat_amount(nut)
+					agent.spend_stamina(eat_stamina)
+					action.succeeded = true
+				else:
+					action.failure_note = "no_food_available"
+		Action.Kind.GIVE:
+			_apply_give(agent, action)
+		Action.Kind.ATTACK:
+			_apply_attack(agent, action)
+		Action.Kind.EMBRACE:
+			_apply_embrace(agent, action)
 		Action.Kind.MOVE:
-			var target := agent.grid_pos + action.direction
-			if not _in_bounds(target.x, target.y):
+			var dir: Vector2i = action.direction
+			var step1 := agent.grid_pos + dir
+			# 1 歩目の成立可否
+			if not _in_bounds(step1.x, step1.y):
+				action.failure_note = "out_of_bounds"
 				return
-			if not world.is_passable(target.x, target.y):
+			if not world.is_passable(step1.x, step1.y):
+				action.failure_note = "impassable"
 				return
-			if occupied.has(target) and occupied[target] != agent.id:
+			var final_pos: Vector2i = step1
+			var slid: bool = false
+			if occupied.has(step1) and occupied[step1] != agent.id:
+				# 1 歩目が他者で占有 → すれ違いで +1 滑り抜けを試す(最大 1 タイルのみ)
+				var step2 := agent.grid_pos + dir * 2
+				if not _in_bounds(step2.x, step2.y):
+					action.failure_note = "occupied_blocked"
+					return
+				if not world.is_passable(step2.x, step2.y):
+					action.failure_note = "occupied_blocked"
+					return
+				if occupied.has(step2) and occupied[step2] != agent.id:
+					action.failure_note = "occupied_blocked"
+					return
+				final_pos = step2
+				slid = true
+			if not agent.can_afford_stamina(move_stamina):
+				action.failure_note = "exhausted"
 				return
-			# 成功時のみコスト。失敗(衝突/水など)はエネルギー消費なし。
 			occupied.erase(agent.grid_pos)
-			occupied[target] = agent.id
-			agent.grid_pos = target
+			occupied[final_pos] = agent.id
+			agent.grid_pos = final_pos
 			agent.hunger = max(0, agent.hunger - move_hunger)
+			agent.spend_stamina(move_stamina)
+			action.succeeded = true
+			if slid:
+				action.failure_note = "slid_past"   # 失敗ではないが記録用マーカー
 		Action.Kind.SPEAK:
-			# 発声は物理的にエネルギーを消費する。失敗条件は現状ないので常に徴収。
+			if not agent.can_afford_stamina(speak_stamina):
+				action.failure_note = "exhausted"
+				return
 			agent.hunger = max(0, agent.hunger - speak_hunger)
+			agent.spend_stamina(speak_stamina)
 			_propagate_speech(agent, action)
+			action.succeeded = true
+
+# --- 新しい物理動作(Phase 4) ---
+
+func _get_agent_by_id(target_id: int) -> Agent:
+	for a in agents:
+		if a.id == target_id:
+			return a
+	return null
+
+func _is_adjacent(a: Agent, b: Agent) -> bool:
+	var dx: int = absi(a.grid_pos.x - b.grid_pos.x)
+	var dy: int = absi(a.grid_pos.y - b.grid_pos.y)
+	return (dx + dy) == 1
+
+# Chebyshev 距離(8 近傍を半径 r の square)で視認可能か。
+# give は遠投可能という想定で VISION_RADIUS(3)内を許容。
+func _within_vision(a: Agent, b: Agent) -> bool:
+	var dx: int = absi(a.grid_pos.x - b.grid_pos.x)
+	var dy: int = absi(a.grid_pos.y - b.grid_pos.y)
+	return dx <= VISION_RADIUS and dy <= VISION_RADIUS
+
+func _emit_event(event: Dictionary) -> void:
+	event_emitted.emit(event)
+
+func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
+	var text: String
+	if cause == "attack" and killer != null:
+		text = "%s が %s に攻撃されて倒れた" % [victim.agent_name, killer.agent_name]
+	elif cause == "starvation":
+		text = "%s が餓死した" % victim.agent_name
+	else:
+		text = "%s が倒れた" % victim.agent_name
+	_emit_event({
+		"tick": tick,
+		"kind": "death",
+		"actor_id": killer.id if killer != null else -1,
+		"target_id": victim.id,
+		"position": victim.grid_pos,
+		"cause": cause,
+		"text": text,
+	})
+	# 視界内の生存者に broadcast(目撃証言)
+	for witness in agents:
+		if witness.id == victim.id:
+			continue
+		if not witness.is_alive():
+			continue
+		var dxw: int = absi(witness.grid_pos.x - victim.grid_pos.x)
+		var dyw: int = absi(witness.grid_pos.y - victim.grid_pos.y)
+		if dxw > VISION_RADIUS or dyw > VISION_RADIUS:
+			continue
+		witness.recent_events.append("%s が倒れた" % victim.agent_name)
+		while witness.recent_events.size() > 5:
+			witness.recent_events.pop_front()
+
+func _apply_give(agent: Agent, action: Action) -> void:
+	var target := _get_agent_by_id(action.target_id)
+	if target == null or not target.is_alive():
+		action.failure_note = "target_invalid"
+		return
+	# give は視界半径内なら可(遠投 / 手渡し両方想定)
+	if not _within_vision(agent, target):
+		action.failure_note = "out_of_range"
+		return
+	if agent.inventory.is_empty():
+		action.failure_note = "nothing_to_give"
+		return
+	if not target.inventory_has_space():
+		action.failure_note = "target_inventory_full"
+		return
+	if not agent.can_afford_stamina(give_stamina):
+		action.failure_note = "exhausted"
+		return
+	var item: String = agent.inventory[0]
+	agent.inventory.remove_at(0)
+	target.inventory_add(item)
+	agent.spend_stamina(give_stamina)
+	target.adjust_relation(agent.id, rel_affection_per_give, rel_trust_per_give, tick)
+	agent.adjust_relation(target.id, 1, 0, tick)
+	agent.append_interaction(target.id, tick, "私が %s に食料を渡した" % target.agent_name)
+	target.append_interaction(agent.id, tick, "%s から食料を受け取った" % agent.agent_name)
+	action.succeeded = true
+	_emit_event({
+		"tick": tick,
+		"kind": "give",
+		"actor_id": agent.id,
+		"target_id": target.id,
+		"position": agent.grid_pos,
+		"text": "%s が %s に食料を与えた" % [agent.agent_name, target.agent_name],
+	})
+
+func _apply_attack(agent: Agent, action: Action) -> void:
+	var target := _get_agent_by_id(action.target_id)
+	if target == null or not target.is_alive():
+		action.failure_note = "target_invalid"
+		return
+	if not _is_adjacent(agent, target):
+		action.failure_note = "not_adjacent"
+		return
+	if not agent.can_afford_stamina(attack_stamina_cost):
+		action.failure_note = "exhausted"
+		return
+	var pre_health: int = target.health
+	target.health = max(0, target.health - attack_health_damage)
+	agent.spend_stamina(attack_stamina_cost)
+	target.spend_stamina(attack_stamina_target_drain)
+	action.succeeded = true
+	agent.append_interaction(target.id, tick, "私が %s を攻撃した" % target.agent_name)
+	target.append_interaction(agent.id, tick, "%s に攻撃された" % agent.agent_name)
+	_emit_event({
+		"tick": tick,
+		"kind": "attack",
+		"actor_id": agent.id,
+		"target_id": target.id,
+		"position": target.grid_pos,
+		"text": "%s が %s を攻撃した (%d → %d)" % [agent.agent_name, target.agent_name, pre_health, target.health],
+	})
+	# 第三者目撃: 視界内の他エージェントは witnesses 扱い(interactions に観察を追記)
+	for witness in agents:
+		if witness.id == agent.id or witness.id == target.id:
+			continue
+		if not witness.is_alive():
+			continue
+		var dxw: int = absi(witness.grid_pos.x - agent.grid_pos.x)
+		var dyw: int = absi(witness.grid_pos.y - agent.grid_pos.y)
+		if dxw > VISION_RADIUS or dyw > VISION_RADIUS:
+			continue
+		witness.append_interaction(agent.id, tick, "%s が %s を攻撃するのを見た" % [agent.agent_name, target.agent_name])
+	# 致死判定
+	if pre_health > 0 and target.health <= 0:
+		_emit_death(target, "attack", agent)
+	# 関係更新
+	target.adjust_relation(agent.id, rel_affection_per_attack, rel_trust_per_attack, tick)
+	agent.adjust_relation(target.id, rel_affection_per_attack / 2, rel_trust_per_attack / 2, tick)
+	# 第三者目撃: 視界内の他エージェントは攻撃者への印象が下がる
+	for witness in agents:
+		if witness.id == agent.id or witness.id == target.id:
+			continue
+		if not witness.is_alive():
+			continue
+		var dxw: int = absi(witness.grid_pos.x - agent.grid_pos.x)
+		var dyw: int = absi(witness.grid_pos.y - agent.grid_pos.y)
+		if dxw > VISION_RADIUS or dyw > VISION_RADIUS:
+			continue
+		witness.adjust_relation(agent.id, rel_affection_per_witness_attack, 0, tick)
+		# 目撃イベントを recent_events に
+		var line := "%s が %s を攻撃した" % [agent.agent_name, target.agent_name]
+		witness.recent_events.append(line)
+		while witness.recent_events.size() > 5:
+			witness.recent_events.pop_front()
+	# 被害者自身の recent_events
+	target.recent_events.append("%s に攻撃された" % agent.agent_name)
+	while target.recent_events.size() > 5:
+		target.recent_events.pop_front()
+
+func _apply_embrace(agent: Agent, action: Action) -> void:
+	var target := _get_agent_by_id(action.target_id)
+	if target == null or not target.is_alive():
+		action.failure_note = "target_invalid"
+		return
+	if not _is_adjacent(agent, target):
+		action.failure_note = "not_adjacent"
+		return
+	if not agent.can_afford_stamina(embrace_stamina_cost):
+		action.failure_note = "exhausted"
+		return
+	# 非対称コスト: する側 -5, される側 +3(癒される)
+	agent.spend_stamina(embrace_stamina_cost)
+	target.gain_stamina(embrace_stamina_gift)
+	target.adjust_relation(agent.id, rel_affection_per_embrace, rel_trust_per_embrace, tick)
+	agent.adjust_relation(target.id, rel_affection_per_embrace, rel_trust_per_embrace, tick)
+	agent.append_interaction(target.id, tick, "私が %s を抱擁した" % target.agent_name)
+	target.append_interaction(agent.id, tick, "%s が私を抱擁した" % agent.agent_name)
+	action.succeeded = true
+	_emit_event({
+		"tick": tick,
+		"kind": "embrace",
+		"actor_id": agent.id,
+		"target_id": target.id,
+		"position": agent.grid_pos,
+		"text": "%s が %s を抱擁した" % [agent.agent_name, target.agent_name],
+	})
+	target.recent_events.append("%s に寄り添われた" % agent.agent_name)
+	while target.recent_events.size() > 5:
+		target.recent_events.pop_front()
 
 func _propagate_speech(speaker: Agent, action: Action) -> void:
 	# broadcast: 話者の視界半径 3 内全員に伝達。
@@ -291,8 +601,8 @@ func _propagate_speech(speaker: Agent, action: Action) -> void:
 		if dx > VISION_RADIUS or dy > VISION_RADIUS:
 			continue
 		var line: String
-		if has_target and other.id in action.speech_target_ids:
-			# 自分が target に含まれている
+		var addressed: bool = has_target and other.id in action.speech_target_ids
+		if addressed:
 			if action.speech_target_ids.size() > 1:
 				var others_names: Array[String] = []
 				for nm in target_names:
@@ -304,11 +614,11 @@ func _propagate_speech(speaker: Agent, action: Action) -> void:
 					line = "%s→あなた:「%s」" % [speaker.agent_name, action.speech_text]
 			else:
 				line = "%s→あなた:「%s」" % [speaker.agent_name, action.speech_text]
+			# 自分宛に話しかけられた → 話者への好感度/信頼度を微増
+			other.adjust_relation(speaker.id, rel_affection_per_speak_addressed, rel_trust_per_speak_addressed, tick)
 		elif has_target:
-			# target に含まれない傍聞き
 			line = "%s→%s:「%s」" % [speaker.agent_name, targets_label, action.speech_text]
 		else:
-			# 不特定発話
 			line = "%s:「%s」" % [speaker.agent_name, action.speech_text]
 		other.recent_events.append(line)
 		while other.recent_events.size() > 5:
@@ -318,26 +628,42 @@ func _in_bounds(x: int, y: int) -> bool:
 	return x >= 0 and y >= 0 and x < world.size and y < world.size
 
 func _summarize_action(action: Action) -> String:
+	var base: String = ""
 	match action.kind:
 		Action.Kind.WAIT:
-			return "wait"
+			base = "wait"
 		Action.Kind.MOVE:
 			var dir := ""
-			if action.direction == Vector2i(0, -1):
-				dir = "N"
-			elif action.direction == Vector2i(0, 1):
-				dir = "S"
-			elif action.direction == Vector2i(1, 0):
-				dir = "E"
-			elif action.direction == Vector2i(-1, 0):
-				dir = "W"
-			return "move " + dir
+			match action.direction:
+				Vector2i(0, -1): dir = "↑"
+				Vector2i(0, 1):  dir = "↓"
+				Vector2i(1, 0):  dir = "→"
+				Vector2i(-1, 0): dir = "←"
+				Vector2i(1, -1): dir = "↗"
+				Vector2i(-1, -1): dir = "↖"
+				Vector2i(1, 1):  dir = "↘"
+				Vector2i(-1, 1): dir = "↙"
+				_: dir = "?"
+			base = "move " + dir
 		Action.Kind.TAKE:
-			return "take food"
+			base = "take food"
+		Action.Kind.EAT:
+			base = "eat"
+		Action.Kind.GIVE:
+			base = "give"
+		Action.Kind.ATTACK:
+			base = "attack"
+		Action.Kind.EMBRACE:
+			base = "embrace"
 		Action.Kind.SPEAK:
-			return "speak \"%s\"" % action.speech_text
+			base = "speak \"%s\"" % action.speech_text
 		_:
-			return "?"
+			base = "?"
+	# 失敗時は LLM が振り返れるように理由を併記(wait/speak は常に成功扱い)
+	if not action.succeeded and action.kind != Action.Kind.WAIT and action.kind != Action.Kind.SPEAK:
+		var note: String = action.failure_note if action.failure_note != "" else "failed"
+		return "%s (failed:%s)" % [base, note]
+	return base
 
 func _summarize_bundle(ordered: Array) -> String:
 	if ordered.is_empty():

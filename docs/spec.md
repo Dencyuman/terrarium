@@ -88,29 +88,41 @@ v0.1は作者の検証用として閉じており、UI/UX・ビジュアル・�
 #### 3.2.2 エージェント (Agent)
 
 - 初期個体数: 20体(性別比は概ね1:1、年齢は繁殖可能な成人期に集中させる)
+- 初期空腹度は config の `agents.initial_hunger_range` でばらつきを持たせる(均一だと交換動機が発生しない)
 - 動的に増減する(誕生/死亡)
 - 保持する状態:
-  - 位置、年齢、空腹度、体力
+  - 位置、年齢、空腹度(0-100, 初期 80 前後)、体力(0-100, 初期 100)
   - 性別、名前、簡易性格タグ(協調/攻撃/好奇 の3軸、各0-100)
-  - 他エージェントごとの関係データ(好感度、信頼度、関係タイプ)
-  - ローリングログ(直近20件のイベント記憶)
-  - 日次サマリ(LLMによる記憶圧縮、日ごとに蓄積)
+  - 所持品(inventory、容量は config 可変、既定 3 枠)
+  - **他エージェントごとの有向関係データ**(自分視点の主観記憶):
+    - 数値サマリ: 好感度 (-100..100)、信頼度 (0..100)
+    - 共通史(interactions): そのペアで過去に起きた物理イベントの客観記録、最大 N 件ロール(Phase 4.5)
+    - ハーネスは「友人」「配偶者」「敵」等の**関係タイプ語彙を一切持たない**。カテゴリはエージェントの speak 内呼称と Phase 7 の共有オブジェクトで自発的に生まれるかを観察する
+  - ローリングログ(直近のイベント記憶、recent_events / own_history)
+  - 日次サマリ(LLMによる記憶圧縮、日ごとに蓄積、Phase 6)
 
 #### 3.2.3 アクション空間 (Actions)
 
 物理的に可能な基本動詞のみを提供し、社会的な意味づけ(結婚、窃盗、裁判等)はエージェントの解釈と命名に委ねる。
 
-- `move(direction)`
-- `speak(text, listeners)`
-- `take(object)`
-- `give(object, agent)`
-- `attack(agent)`
-- `embrace(agent)`
-- `teach(agent, memory_id)`
-- `reproduce_with(agent)` ← 双方の合意が必要
-- `create_shared_object(content)`
-- `modify_object(object_id, new_content)`
+- `move(direction)` — 1 マス隣接タイルへ
+- `speak(text, targets)` — 視界半径内全員に broadcast、targets は意図のラベル(単体 / 配列 / 省略)
+- `take(object)` — 現在タイルから inventory に 1 個拾う
+- `eat` — inventory から 1 個消費、無ければ現在タイルから直接消費(どちらも hunger 回復)
+- `give(object, agent)` — 隣接エージェントに inventory を渡す
+- `attack(agent)` — 隣接エージェントの health を減らす
+- `embrace(agent)` — 隣接エージェントと接触(物理的には害なし、関係変動のトリガー)
+- `teach(agent, memory_id)` — Phase 6
+- `reproduce_with(agent)` — 相互合意、異性間、隣接、確率成功(Phase 5)
+- `create_shared_object(content)` — Phase 7
+- `modify_object(object_id, new_content)` — Phase 7
 - `wait`
+
+**同 tick 合成ルール**(物理制約のみ、Phase 3 以降):
+- 合計上限: **5 アクション/tick**
+- per-kind 上限: speak=1 / wait=1 / move=3 / take=2 / eat=2 / give=2 / attack=2 / embrace=2
+- 実行順はエージェントが指定する順序を harness がそのまま適用する(harness は並べ替えない)
+- 物理条件を満たさないアクションは silent fail(エネルギー消費なし)。`own_history` に `(failed:<reason>)` として残り、ログ UI には出さない
 
 #### 3.2.4 ライフサイクル
 
@@ -222,7 +234,8 @@ v0.1は作者の検証用として閉じており、UI/UX・ビジュアル・�
 | LLM バックエンド | Ollama (ローカル) |
 | デフォルトモデル | gemma4:e4b (effective 4.5B, 9.6GB, 128K ctx) |
 | LLM 通信 | Godot 標準 HTTPRequest ノード |
-| 永続化 | なし(v0.1 はインメモリのみ) |
+| 永続化 | インメモリ駆動。デバッグ/再現用に `runs/<timestamp>/log.jsonl` へ event / action / llm_request / llm_response / tick を JSONL で構造化出力(gitignore 済み、v0.2 で save/replay の基盤へ発展) |
+| 設定上書き | `data/config.json`(tracked、既定値)を base とし、`data/config.local.json`(gitignore)を deep merge。tracked な既定を汚さず手元で極端シナリオを試せる |
 | 配布形式 | v0.1 はソースのみ(作者自身のローカル実行) |
 | OSS ライセンス | 未定(v0.1 は Private リポジトリ、公開しない) |
 | プラットフォーム | v0.1 は開発機 (macOS or Linux) のみ想定 |
@@ -274,49 +287,69 @@ v0.1 は以下の Phase に分割して段階的に実装する。各 Phase 完�
 
 #### Phase 3: LLM 統合 (v0.1.0-phase3)
 
-9. Ollama クライアント (HTTPRequest ベース)
-10. プロンプトビルダー、レスポンスパーサ
-11. LLM ベースの decide、フォールバック処理
-12. 並列制御(セマフォ)
+9. Ollama クライアント (HTTPRequest ベース、Gemma 4 の `/api/chat` + system ロール活用、`think:false` 明示、`keep_alive` でモデル常駐)
+10. プロンプトビルダー、レスポンスパーサ(規範的記述なしの物理のみプロンプト、日本語自然発話)
+11. LLM ベースの decide、フォールバック処理(parse/timeout/HTTP エラーは該当 action のみ wait、バッチ全体は fall through しない)
+12. 並列制御(セマフォ、config 可変、既定 4)
+13. (運営): 複合アクション。1 tick で最大 5 アクション、per-kind 上限(speak=1 / move=3 / take/eat/give/attack/embrace=2 / wait=1)。順序はエージェントが自由に指定、harness は並べ替えない
+14. (運営): 応答が返るたびの incremental apply(tick 内で部分的に world が進行、LLM 入力側は decide_all 開頭で snapshot して frozen を保つ)
+15. (運営): 代謝経済(config 化):tick 基礎代謝 / move コスト / speak コスト / eat 回復量 / 飢餓ダメージ / 食料スポーン率 / 再生率
+16. (運営): 物理的可用性フラグ(`can_eat_now` / `adjacent_food` / `adjacent_agents`)と vision 内の `manhattan` 距離を prompt に事前計算で載せ、LLM の無駄な action 選択を抑制
+17. (運営): `config.local.json` override と `runs/<ts>/log.jsonl` の構造化ログ(event / action / llm_request / llm_response / tick)でデバッグ再現性を確保
 
 **確認事項**: LLM が意思決定する、発話が出る、20体並列で動作する。
 
 #### Phase 4: 社会の芽 (v0.1.0-phase4)
 
-13. `speak(to)` によるエージェント間対話
-14. 関係性データ構造、好感度/信頼度の更新
-15. `take` / `give` による物品のやり取り
+13. `speak(to)` によるエージェント間対話(multi-target 可、broadcast 範囲 = 視界半径)
+14. 関係性データ構造(有向、好感度/信頼度を harness が物理イベントから自動更新)
+15. `take` / `give` による物品のやり取り(inventory 枠あり)
 16. `attack` / `embrace` による身体的相互作用
-17. 関係性グラフ UI
+17. 関係性グラフ UI(実データ連動、エッジ太さ=|affection|・色=符号)
+18. 有向エッジに `interactions: Array[String]` を追加(各エージェントが他者ごとに保持する、過去の共有史ローリング)
+19. harness は give / attack / embrace / reproduce / witness_attack / witness_death 等の物理イベント成立時、関与する両者の interactions に追記する(テキストはイベントの客観記述のみ、意味づけはしない)
+20. プロンプトの `relations` に interactions を添え、LLM が「この相手との過去」を読み取れるようにする
+21. **カテゴリ語彙(partner / leader / friend / enemy 等)は harness が一切提供しない**。「友達」「仲間」「妻」「兄貴」「先生」などの呼称が LLM の speak に出現し、繰り返され、共有オブジェクトに書かれることで、**制度(婚姻・派閥・師弟関係)が自発的に物体化**する過程を Phase 7 までの観察対象とする
+22. (運営): 物理成否の露出(Action.succeeded / failure_note)、failed action は log から除外・own_history には `(failed:...)` で残す
+23. (運営): エージェント視界に他者の `hunger`/`health` を載せる(身体状態の物理的可視性)
+24. (運営): 年代記へのイベント流入(give/attack/embrace/death)と UI 反映
+25. (運営): 死亡検知の最小実装(attack致命/飢餓)— 視覚的フェードや家系図記録は Phase 5 で完成
 
-**確認事項**: エージェント同士が会話し、関係が変化し、グラフに反映される。
+**確認事項**: エージェント同士が会話し、関係が変化し、グラフに反映される。反復的な give/embrace を繰り返すペアが relations の interactions に履歴を累積し、speak の中で特別な呼称を使うか(または使わないか)が観察できる。
 
 #### Phase 5: ライフサイクル (v0.1.0-phase5)
 
-18. 加齢システム、日の概念
-19. 死亡処理(老衰/飢餓/殺害)
-20. `reproduce_with`(合意ベースの生殖)
-21. 子エージェント生成、性格継承
-22. 家系図 UI
+26. 加齢システム、日の概念
+27. 死亡処理の完成(老衰/飢餓/致命的 attack、視覚的フェード、家系図反映、年代記連動)
+28. **死亡時の inventory ドロップ**(spec.md §3.2.4 既定)— 死体のタイルに食料が残り、他者が `take` 可能
+29. `reproduce_with`(合意ベースの生殖):
+    - 物理条件: **異性間**(性別が異なる)・**隣接**・**双方が同 tick で互いに reproduce_with を指定**(相互合意)
+    - 確率 p(config 可変)で成功、失敗時もエネルギー消費
+    - 成功時: 隣接する空きタイルに子エージェントを誕生、性格 3 軸は両親平均 ± ノイズ
+    - **ハーネスは「配偶者」「パートナー」というデータ型を一切持たない**。一夫一妻・多妻・乱婚などの体系は reproduce の反復パターンと Phase 7 の共有オブジェクト命名の結果として自発的に立ち上がる(または立ち上がらない)
+30. 子エージェント生成、性格継承
+31. 家系図 UI の実データ化
 
-**確認事項**: エージェントが死亡・誕生し、世代が進行する。
+**確認事項**: エージェントが死亡・誕生し、世代が進行する。死体ドロップが他者の食料源になりうる(= attack の捕食戦略が経済的に成立)。
 
 #### Phase 6: 文化継承 (v0.1.0-phase6)
 
-23. 日次サマリ生成(LLM による記憶圧縮)
-24. `teach` アクション(記憶の部分転送)
-25. 伝承時の変質機構
+32. 日次サマリ生成(LLM による記憶圧縮、1 日の観察を 1 段落のテキストにまとめて蓄積)
+33. `teach` アクション(記憶の部分転送、親→子 / 師→弟子など関係問わず)
+34. 伝承時の変質機構(確率的ノイズを harness が与える。伝言ゲーム効果)
+35. 日次サマリと teach された記憶がプロンプトに添付され、長期文化が形成される下地となる
 
-**確認事項**: 親の記憶の一部が子に継承され、世代を超えて変質する。
+**確認事項**: 親の記憶の一部が子に継承され、世代を超えて変質する。数日の観察で「森には食料が多い」のような**統計的知識の集団内伝達**が観察できる。
 
 #### Phase 7: 共有オブジェクトと制度の器 (v0.1.0-phase7)
 
-26. 共有オブジェクトのデータ構造
-27. `create_shared_object`, `modify_object`
-28. 視界内の共有オブジェクトの観測機構
-29. イベントタイムライン UI
+36. 共有オブジェクトのデータ構造(世界内に位置を持つ「書き物」)
+37. `create_shared_object(content)`, `modify_object(id, content)`
+38. 視界内の共有オブジェクトの観測機構(vision 経由で LLM に露出)
+39. イベント年代記 UI のフィルタ完成(誕生/死亡/戦闘/共有/教育)
+40. **呼称・制度の物体化**: Phase 4 で集積された呼称(「我らが樅の民」「霞の森」など)が共有オブジェクトに書かれ、世界の物体として永続化・複数エージェント間で共有される。harness は内容を解釈しない
 
-**確認事項**: エージェントが「書き物」を作成し、他者が観測・編集可能になる。
+**確認事項**: エージェントが「書き物」を作成し、他者が観測・編集可能になる。連署・上書き・場所と結びついた命名などが観察できる。
 
 #### Phase 8: 統合調整 (v0.1.0)
 

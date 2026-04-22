@@ -6,6 +6,8 @@ signal batch_progress(done: int, total: int, in_flight: int)
 signal batch_finished(elapsed_sec: float)
 signal health_changed(status: String)   # "ok" / "error" / "unknown"
 signal agent_decided(agent_id: int, actions: Array)   # 複合アクション Array[Action]
+signal llm_request_sent(agent_id: int, user_prompt: String)
+signal llm_response_received(agent_id: int, body: String, latency_ms: int)
 
 const DEFAULT_TIMEOUT_SEC: int = 60   # Ollama キュー待ち + 処理を考慮
 
@@ -132,19 +134,22 @@ func _start_request(task: Dictionary) -> void:
 	if err != OK:
 		_finish_request(http, agent, agents, [Action.wait("http start: %d" % err)] as Array, false)
 		return
+	llm_request_sent.emit(agent.id, user_prompt)
+	http.set_meta("request_sent_at_ms", Time.get_ticks_msec())
 	_await_and_finish(http, agent, agents)
 
 func _await_and_finish(http: HTTPRequest, agent: Agent, agents: Array) -> void:
 	var result: Array = await http.request_completed
 	var res_code: int = int(result[1])
 	var body: PackedByteArray = result[3]
-	print("[Ollama] <- agent %s: http %d, %d bytes" % [agent.agent_name, res_code, body.size()])
+	var sent_at: int = int(http.get_meta("request_sent_at_ms", 0))
+	var latency: int = Time.get_ticks_msec() - sent_at
+	var body_text: String = body.get_string_from_utf8()
+	llm_response_received.emit(agent.id, body_text, latency)
 	if res_code < 200 or res_code >= 300:
 		_finish_request(http, agent, agents, [Action.wait("http %d" % res_code)] as Array, false)
 		return
-	var body_text: String = body.get_string_from_utf8()
 	var actions: Array = ResponseParser.parse(body_text, agents)
-	print("[Ollama] parsed %s -> %d actions" % [agent.agent_name, actions.size()])
 	_finish_request(http, agent, agents, actions, true)
 
 func _finish_request(http: HTTPRequest, agent: Agent, _agents: Array, actions: Array, ok: bool) -> void:

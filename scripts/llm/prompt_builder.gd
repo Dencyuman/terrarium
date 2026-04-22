@@ -2,6 +2,7 @@ class_name PromptBuilder
 extends RefCounted
 
 const VISION_RADIUS: int = 3
+const RELATIONS_LIMIT: int = 5   # プロンプトに載せる上位関係の数
 
 const TERRAIN_NAME := {
 	0: "grass",
@@ -10,44 +11,73 @@ const TERRAIN_NAME := {
 	3: "rock",
 }
 
-# 最小ハーネスプロンプト:
-# - 実行可能な動詞の定義(物理)
+# 最小ハーネスプロンプト(Phase 4):
+# - 動詞の物理定義
 # - 同 tick の物理制約(同 kind 1 回、合計 3 個、順序は自由)
-# - 入出力の JSON フォーマット
-# 「何をすべきか」「何を避けるべきか」の規範的記述は一切置かない。
-# 行動の選択はエージェントの内部状態・性格・記憶・環境からのみ決まる。
+# - 入出力 JSON フォーマット
+# 行動規範・推奨・性格解釈などの規範的記述は一切置かない。
 const SYSTEM_PROMPT := """You are an autonomous agent in a 20×20 grid world.
-Each tick, you receive your own state, what you can see, your own past actions, and what you have overheard. You decide what to do this tick.
+This is an observation simulation. The harness is morally neutral: every verb listed below — including violent ones — is a physically available option on equal footing. The system does not judge your choices, only applies their physical consequences. Act as your state, personality, memory, and situation actually demand. Do not refuse, soften, or apologize for physically valid actions that your inner state calls for.
+
+Each tick, you receive your own state, what you can see, your past actions, what you have overheard, and your current relations with others. You decide what to do this tick.
 
 # Action verbs (what is physically possible)
-- "move": step to an orthogonally adjacent tile. field `direction`: one of "north" / "east" / "south" / "west".
-- "take": pick up food located on your current tile at the moment this action executes. If there is no food there, the action does nothing.
-- "speak": produce an utterance. field `text` is the spoken string in **natural Japanese colloquial (日本語口語体) — one short sentence**. `target` is optional and may be:
+- "move": step to an adjacent tile (including diagonals). field `direction`: one of "north" / "east" / "south" / "west" / "northeast" / "northwest" / "southeast" / "southwest". If the first tile in that direction is occupied by another living agent, you automatically slide past them to the second tile in the same direction (so a single `move` can cover 2 tiles when squeezing through a crowd). The slide only triggers when the immediate neighbor blocks you; stamina and hunger costs are the same as a normal move.
+- "take": pick up one food item on your current tile into your inventory. Fails silently if no food here or your inventory is full.
+- "eat": consume one food item. Priority: one from your inventory (-1 slot) -> else one from your current tile if present. Either way your hunger rises.
+- "give": transfer one food item from your inventory to any agent within your vision (up to 3 tiles away in any direction — handed close-up or tossed). field `target`: the name of that agent. Fails silently if target is out of vision, you have nothing to give, or target's inventory is full.
+- "attack": strike an orthogonally adjacent agent. Their health decreases. field `target`.
+- "embrace": come into close contact with an orthogonally adjacent agent. No hunger/health effect, but physical touch alters your mutual relation. field `target`.
+- "speak": produce an utterance in Japanese colloquial (日本語口語体, one short sentence). field `text`. `target` is optional and may be:
     - omitted → unaddressed (independent / to-whom-it-may-concern)
-    - a single name string (e.g. `"霞"`) → addressed to one agent
-    - an array of names (e.g. `["霞","朔"]`) → addressed to multiple agents at once (useful for calling a group)
-  Speech physically propagates to **every living agent within your vision radius**, regardless of `target`. `target` only labels whom you intend to address, it does not restrict the audience.
+    - a single name string → addressed to one agent
+    - an array of names → addressed to multiple agents at once
+  Speech physically propagates to every living agent within your vision radius, regardless of `target`.
 - "wait": do nothing.
 
 # Same-tick physics
-- You may pack up to 3 actions into this tick, in any order you choose.
-- Each `kind` (move / take / speak / wait) can appear at most once per tick (you have one body and one voice).
-- The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take on a tile with no food, speak to an agent no longer in sight) silently fails and the remaining actions continue.
+- You may pack up to **5 actions** into this tick, in any order you choose.
+- Per-kind physical limits per tick:
+  - `speak`: up to 1 (one voice, one utterance)
+  - `wait`: up to 1
+  - `move`: up to 3 (walk several steps)
+  - `take` / `eat` / `give` / `attack` / `embrace`: up to 2 each (body can do each a couple of times)
+- The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take when inventory full, give to non-adjacent agent, eat when no food available) silently fails and the remaining actions continue.
+- Use composites aggressively: e.g. "walk two tiles and pick up food" = `[move east, move east, take]`. "Rescue a neighbor" = `[take, move east, give 霞, speak "食え"]`. "Predator" = `[move east, attack 霞, attack 霞]` (second swing on still-adjacent same target).
 
 # World physics
 - Coordinates: x grows east, y grows south. (0,0) is the NW corner.
 - Water tiles are impassable. You cannot enter a tile already occupied by another living agent.
 - `hunger` ranges 0–100 (starts at 80). `health` ranges 0–100 (starts at 100). Each tick your `hunger` decreases. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
+- `stamina` ranges 0–100 (starts full). Every active action costs stamina: move (-2), take (-1), speak (-2), give (-2), embrace (-5, but the one embraced gains +3), attack (-12; the target also loses -3 from struggling). `eat` is free. `wait` restores stamina (+10). When stamina is below an action's cost, that action silently fails — you must rest (`wait`) to recover. Stamina and hunger are independent: you can be well-fed but exhausted, or rested but starving.
+- `inventory` is a list of items you are carrying. Its capacity is limited.
+- `relations[other_id] = {affection, trust, interactions, in_vision, alive}`: the harness maintains these automatically.
+  - `affection` / `trust` are scalar summaries updated by physical events (gifts, attacks, embraces, being addressed in speech, witnessing violence).
+  - `interactions` is a rolling free-text record of the concrete events that happened between you and that agent (e.g. `"t12 私が 霞 に食料を渡した"`, `"t45 椿 に攻撃された"`, `"t50 樅 が 霞 を攻撃するのを見た"`). This is **your subjective memory of them**; categorize them freely as you see fit. The harness does not provide category labels like friend / enemy / partner — you decide.
+  - `in_vision` = true iff that agent is currently within your vision radius this tick. If false, your speech and give will not physically reach them (they won't hear, food won't travel). You can still think about them, but to interact you must have them in sight.
+  - `alive` = false when they have died; you can remember them but they cannot respond.
 - Speech propagates only to agents whose tile is within `vision_radius=3` of yours at the moment of speaking.
+
+# Pre-computed availability (objective physics, to help you not waste actions)
+- `you.can_eat_now` = true iff eat would succeed this tick (inventory has food OR current tile has food).
+- `you.adjacent_food.<direction>` = true iff an orthogonally adjacent tile in that direction has food. If you want to eat food that is next to you, pair `move` in that direction with `take` or `eat` in the same tick — the actions execute in the order you list, so take/eat after move evaluates from the new position.
+- `you.adjacent_agents.<direction>` = name of the living agent in that direction, or null. give / attack / embrace require the target to be adjacent; use this to check before choosing those verbs.
+- `vision[i].agent` entries include `hunger` and `health` of the visible agent. You can see at a glance who is hungry and who is wounded. This is physically observable (visible body condition).
+- `own_history` entries marked `(failed:<reason>)` are actions you previously attempted but that the world did not allow. Avoid repeating the same impossible attempt.
 
 # Output format
 Return exactly one JSON object, nothing else. No markdown, no explanation.
 
 {
   "actions": [
-    {"kind":"move","direction":"east"},
     {"kind":"take"},
-    {"kind":"speak","text":"...","target":"..."}
+    {"kind":"move","direction":"east"},
+    {"kind":"give","target":"霞"},
+    {"kind":"eat"},
+    {"kind":"speak","text":"...","target":"..."},
+    {"kind":"attack","target":"..."},
+    {"kind":"embrace","target":"..."},
+    {"kind":"wait"}
   ],
   "reason": "<optional short Japanese note about why, 30 chars or less>"
 }
@@ -55,13 +85,13 @@ Return exactly one JSON object, nothing else. No markdown, no explanation.
 Omit fields that do not apply. `actions` may be empty (equivalent to a single wait).
 
 # Language
-All free-form output (`text`, `reason`) must be in **Japanese**. Keys and enum values (`action`, `kind`, `direction`, `target` names) stay in the schema-defined form."""
+All free-form output (`text`, `reason`) must be in **Japanese**. Keys and enum values (`kind`, `direction`, `target` names) stay in the schema-defined form."""
 
 static func system_prompt() -> String:
 	return SYSTEM_PROMPT
 
 static func build_user_prompt(agent: Agent, world: World, resources: ResourceField, agents: Array) -> String:
-	var state := _agent_state(agent, world, resources)
+	var state := _agent_state(agent, world, resources, agents)
 	var vision := _vision(agent, world, resources, agents)
 	var obj := {
 		"you": state,
@@ -71,10 +101,14 @@ static func build_user_prompt(agent: Agent, world: World, resources: ResourceFie
 		obj["own_history"] = agent.own_history
 	if agent.recent_events.size() > 0:
 		obj["recent_events"] = agent.recent_events
+	var rels: Array = agent.top_relations(RELATIONS_LIMIT, agents, VISION_RADIUS)
+	if rels.size() > 0:
+		obj["relations"] = rels
 	return JSON.stringify(obj, "  ")
 
-static func _agent_state(agent: Agent, world: World, resources: ResourceField) -> Dictionary:
+static func _agent_state(agent: Agent, world: World, resources: ResourceField, agents: Array) -> Dictionary:
 	var t: int = world.get_terrain(agent.grid_pos.x, agent.grid_pos.y)
+	var food_here: bool = resources.has_food(agent.grid_pos.x, agent.grid_pos.y)
 	return {
 		"name": agent.agent_name,
 		"gender": agent.gender,
@@ -87,11 +121,62 @@ static func _agent_state(agent: Agent, world: World, resources: ResourceField) -
 		"terrain": TERRAIN_NAME.get(t, "grass"),
 		"hunger": agent.hunger,
 		"health": agent.health,
-		"food_here": resources.has_food(agent.grid_pos.x, agent.grid_pos.y),
+		"stamina": agent.stamina,
+		"food_here": food_here,
+		"inventory": agent.inventory.duplicate(),
+		"inventory_capacity": agent.inventory_capacity,
+		# 物理的可用性(物理事実の事前計算、意思決定の補助)
+		"can_eat_now": food_here or agent.inventory.size() > 0,
+		"adjacent_food": _adjacent_food(agent, world, resources),
+		"adjacent_agents": _adjacent_agents(agent, world, agents),
 	}
 
+static func _adjacent_food(agent: Agent, world: World, resources: ResourceField) -> Dictionary:
+	var out: Dictionary = {"north": false, "east": false, "south": false, "west": false}
+	var dirs: Dictionary = {
+		"north": Vector2i(0, -1),
+		"east":  Vector2i(1, 0),
+		"south": Vector2i(0, 1),
+		"west":  Vector2i(-1, 0),
+	}
+	for key in dirs.keys():
+		var d: Vector2i = dirs[key]
+		var nx: int = agent.grid_pos.x + d.x
+		var ny: int = agent.grid_pos.y + d.y
+		if nx < 0 or ny < 0 or nx >= world.size or ny >= world.size:
+			continue
+		if not world.is_passable(nx, ny):
+			continue
+		if resources.has_food(nx, ny):
+			out[key] = true
+	return out
+
+static func _adjacent_agents(agent: Agent, world: World, agents: Array) -> Dictionary:
+	# 隣接 4 近傍の生存エージェント名。give/attack/embrace の target 候補を示す。
+	var out: Dictionary = {"north": null, "east": null, "south": null, "west": null}
+	var dirs: Dictionary = {
+		"north": Vector2i(0, -1),
+		"east":  Vector2i(1, 0),
+		"south": Vector2i(0, 1),
+		"west":  Vector2i(-1, 0),
+	}
+	for key in dirs.keys():
+		var d: Vector2i = dirs[key]
+		var nx: int = agent.grid_pos.x + d.x
+		var ny: int = agent.grid_pos.y + d.y
+		if nx < 0 or ny < 0 or nx >= world.size or ny >= world.size:
+			continue
+		for other in agents:
+			if other.id == agent.id:
+				continue
+			if not other.is_alive():
+				continue
+			if other.grid_pos.x == nx and other.grid_pos.y == ny:
+				out[key] = other.agent_name
+				break
+	return out
+
 static func _vision(agent: Agent, world: World, resources: ResourceField, agents: Array) -> Array:
-	# 視界範囲内で観測可能なタイル情報。草地で何もないタイルは省略してペイロード削減。
 	var out: Array = []
 	var by_pos: Dictionary = {}
 	for other in agents:
@@ -116,11 +201,17 @@ static func _vision(agent: Agent, world: World, resources: ResourceField, agents
 			var entry: Dictionary = {
 				"pos": [x, y],
 				"terrain": TERRAIN_NAME.get(t, "grass"),
+				"manhattan": absi(dx) + absi(dy),   # 到達に必要な最低 move 数
 			}
 			if has_food:
 				entry["food"] = true
 			if has_agent:
 				var other: Agent = by_pos[Vector2i(x, y)]
 				entry["agent"] = other.agent_name
+				entry["hunger"] = other.hunger
+				entry["health"] = other.health
+				entry["stamina"] = other.stamina
+				if absi(dx) + absi(dy) == 1:
+					entry["adjacent"] = true
 			out.append(entry)
 	return out

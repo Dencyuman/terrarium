@@ -2,6 +2,8 @@ extends Node2D
 
 const BASE_TICK_SEC: float = 0.5  # 無 LLM 時の基準 tick。LLM 駆動時は LLM が bottleneck
 const LOG_MAX: int = 50
+const CHRONICLE_MAX: int = 200
+const CHRONICLE_COMPACT_LIMIT: int = 12
 const WORLD_FRAME_SIZE: float = 640.0   # 20*32
 const WORLD_ORIG_LOCAL: Vector2 = Vector2(100, 4)   # WorldView の元位置
 
@@ -12,6 +14,7 @@ var agents: Array = []
 var resources: ResourceField
 var scheduler: Scheduler
 var ollama: OllamaClient
+var run_logger: RunLogger
 
 var current_tab: int = 0
 var view_nodes: Array = []
@@ -30,6 +33,7 @@ var tick_per_day: int = 10
 var config: Dictionary
 
 var log_entries: Array[String] = []
+var chronicle_entries: Array[Dictionary] = []
 var decide_progress_str: String = "—"
 var selected_agent_id: int = -1
 var ping_retry_timer: Timer
@@ -39,6 +43,8 @@ var pending_decisions: Dictionary = {}
 func _ready() -> void:
 	config = _load_config()
 	var names_data: Dictionary = _load_json("res://data/names.json")
+
+	run_logger = RunLogger.new()
 
 	world_seed = int(config["world"]["seed"])
 	world_size = int(config["world"]["size"])
@@ -50,6 +56,8 @@ func _ready() -> void:
 	ollama.health_changed.connect(_on_health_changed)
 	ollama.batch_progress.connect(_on_decide_progress)
 	ollama.agent_decided.connect(_on_agent_decided_incremental)
+	ollama.llm_request_sent.connect(_on_llm_request_sent)
+	ollama.llm_response_received.connect(_on_llm_response_received)
 
 	_initialize_simulation(names_data)
 	_wire_views()
@@ -81,8 +89,11 @@ func _initialize_simulation(names_data: Dictionary) -> void:
 	agents = _spawn_agents(names_data["agents"], world, world_seed)
 	scheduler = Scheduler.new(world, resources, agents, world_seed, tick_per_day)
 	scheduler.configure_costs(config.get("costs", {}))
+	scheduler.configure_relations(config.get("relations", {}))
 	scheduler.phase_changed.connect(_on_phase_changed)
-	scheduler.tick_completed.connect(_on_tick_completed)
+	scheduler.tick_completed.connect(_on_tick_completed_with_logging)
+	scheduler.event_emitted.connect(_on_event_emitted)
+	scheduler.action_applied.connect(_on_action_applied)
 
 func _ping_ollama_async() -> void:
 	await ollama.ping()
@@ -158,6 +169,8 @@ func _wire_views() -> void:
 	var relation := stack.get_node_or_null(^"RelationView") as RelationGraphView
 	if relation != null:
 		relation.set_agents(agents)
+		if not relation.agent_clicked.is_connected(_on_agent_clicked):
+			relation.agent_clicked.connect(_on_agent_clicked)
 	var family := stack.get_node_or_null(^"FamilyView") as FamilyTreeView
 	if family != null:
 		family.set_agents(agents)
@@ -299,6 +312,7 @@ func _on_reset_pressed() -> void:
 	running = false
 	accumulator = 0.0
 	log_entries.clear()
+	chronicle_entries.clear()
 	var pause := get_node_or_null(^"UI/StatusBar/SpeedGroup/Pause") as Button
 	if pause != null:
 		pause.text = "▶"
@@ -311,12 +325,65 @@ func _on_reset_pressed() -> void:
 	if list_body != null:
 		list_body.text = _format_agent_list()
 	_update_speech_log_ui()
+	_update_chronicle_ui()
 
 func _on_phase_changed(phase_name: String) -> void:
 	current_phase_name = phase_name
 
 func _on_tick_completed(_tick_no: int) -> void:
 	pass
+
+func _on_action_applied(agent_id: int, action: Action, snapshot: Dictionary) -> void:
+	if run_logger == null:
+		return
+	var a := _get_agent_by_id(agent_id)
+	var nm: String = a.agent_name if a != null else str(agent_id)
+	run_logger.log_action(scheduler.tick, nm, {
+		"kind": action.kind_label(),
+		"succeeded": action.succeeded,
+		"failure_note": action.failure_note,
+		"direction": [action.direction.x, action.direction.y],
+		"speech_text": action.speech_text,
+		"speech_target_ids": action.speech_target_ids,
+		"target_id": action.target_id,
+		"reason": action.reason,
+		"after_hunger": snapshot.get("hunger"),
+		"after_health": snapshot.get("health"),
+		"after_stamina": snapshot.get("stamina"),
+		"after_pos": snapshot.get("pos"),
+		"after_inventory_size": snapshot.get("inventory_size"),
+	})
+
+func _on_tick_completed_with_logging(tick_no: int) -> void:
+	if run_logger == null:
+		return
+	var alive := 0
+	for a in agents:
+		if a.is_alive():
+			alive += 1
+	run_logger.log_tick_boundary(tick_no, scheduler.day, alive)
+
+func _on_event_emitted(event: Dictionary) -> void:
+	chronicle_entries.push_back(event)
+	while chronicle_entries.size() > CHRONICLE_MAX:
+		chronicle_entries.pop_front()
+	_update_chronicle_ui()
+	if run_logger != null:
+		run_logger.log_event(scheduler.tick, event)
+
+func _on_llm_request_sent(agent_id: int, user_prompt: String) -> void:
+	if run_logger == null:
+		return
+	var a := _get_agent_by_id(agent_id)
+	var nm: String = a.agent_name if a != null else str(agent_id)
+	run_logger.log_llm_request(scheduler.tick, nm, user_prompt)
+
+func _on_llm_response_received(agent_id: int, body: String, latency_ms: int) -> void:
+	if run_logger == null:
+		return
+	var a := _get_agent_by_id(agent_id)
+	var nm: String = a.agent_name if a != null else str(agent_id)
+	run_logger.log_llm_response(scheduler.tick, nm, body, latency_ms)
 
 func _on_decide_progress(done: int, total: int, in_flight: int) -> void:
 	decide_progress_str = "%d / %d  (in-flight %d)" % [done, total, in_flight]
@@ -326,28 +393,41 @@ func _on_decide_progress(done: int, total: int, in_flight: int) -> void:
 
 func _on_agent_decided_incremental(agent_id: int, actions: Array) -> void:
 	# LLM 応答が届いた瞬間、world に即 apply して UI も同時に更新する。
-	# move/take/speak すべてリアルタイムに反映される(spec §3.2.6 の
-	# "Decide 中 world 不変" は LLM 入力については decide_all 冒頭で snapshot
-	# 済みなので崩れない)。
 	pending_decisions[agent_id] = actions
 	var agent := _get_agent_by_id(agent_id)
 	if agent == null:
 		return
-	# sanitize してから world に apply
 	var ordered: Array = scheduler.sanitize_bundle(actions)
 	scheduler.apply_bundle_for_agent(agent, actions)
-	# UI 反映
+	# action のログは scheduler.action_applied シグナル経由で per-action に記録される
+	# (ここでは bundle 全体のスナップショットは取らない)
+	# UI をすべて decide ごとに更新する
 	_append_action_card(agent, ordered)
 	for act in ordered:
+		# 物理的に失敗したアクション(TAKE だが食料なし等)はログに出さない。
+		# ハーネス原則: 起きなかった事は観察できない。
+		if act.kind == Action.Kind.WAIT:
+			continue
+		if not act.succeeded:
+			continue
 		_append_log_entry(agent, act)
-	# ワールドビューを再描画(位置・吹き出し・矢印すべて)
+	# ワールドビュー(位置・吹き出し・矢印・inventory dots)
 	var world_view := get_node_or_null(world_view_path) as WorldView
 	if world_view != null:
 		world_view.set_current_tick(scheduler.tick)
 		world_view.queue_redraw()
-	# 選択中エージェントなら詳細カードも即時更新
-	if selected_agent_id == agent.id:
+	# エージェントリスト(hp/hg の即時反映)
+	var list_body := get_node_or_null(^"UI/AgentListPanel/AgentListBody") as RichTextLabel
+	if list_body != null:
+		list_body.text = _format_agent_list()
+	# エージェント詳細(選択中なら、自分じゃなくても give/attack/embrace の影響で
+	# inventory や relations が動いた可能性がある。常に redraw する)
+	if selected_agent_id >= 0:
 		_update_agent_detail()
+	# 関係性グラフ(表示中のみ再描画)
+	var relation_view := get_node_or_null(^"ViewStack/RelationView") as RelationGraphView
+	if relation_view != null and relation_view.visible:
+		relation_view.queue_redraw()
 
 func _clear_action_cards() -> void:
 	var panel := get_node_or_null(^"UI/ActionPanel") as Panel
@@ -498,6 +578,28 @@ func _append_log_entry(agent: Agent, act: Action) -> void:
 		Action.Kind.TAKE:
 			line = "%s  [color=%s][b]%s[/b][/color]  [color=#d0a050]— take 食料[/color]" % [
 				tick_str, hex, agent.agent_name
+			]
+		Action.Kind.EAT:
+			line = "%s  [color=%s][b]%s[/b][/color]  [color=#a7d088]— eat[/color]" % [
+				tick_str, hex, agent.agent_name
+			]
+		Action.Kind.GIVE:
+			var g_target := _get_agent_by_id(act.target_id)
+			var g_name := g_target.agent_name if g_target != null else "?"
+			line = "%s  [color=%s][b]%s[/b][/color] [color=#6acfb0]→ give →[/color] [b]%s[/b]" % [
+				tick_str, hex, agent.agent_name, g_name
+			]
+		Action.Kind.ATTACK:
+			var at_target := _get_agent_by_id(act.target_id)
+			var at_name := at_target.agent_name if at_target != null else "?"
+			line = "%s  [color=%s][b]%s[/b][/color] [color=#e07070]— attack →[/color] [b]%s[/b]" % [
+				tick_str, hex, agent.agent_name, at_name
+			]
+		Action.Kind.EMBRACE:
+			var em_target := _get_agent_by_id(act.target_id)
+			var em_name := em_target.agent_name if em_target != null else "?"
+			line = "%s  [color=%s][b]%s[/b][/color] [color=#e0a0c0]— embrace →[/color] [b]%s[/b]" % [
+				tick_str, hex, agent.agent_name, em_name
 			]
 		_:
 			return
@@ -667,15 +769,78 @@ func _default_action_desc(act: Action) -> String:
 			return "wait"
 
 func _direction_label(d: Vector2i) -> String:
-	if d == Vector2i(0, -1):
-		return "N"
-	if d == Vector2i(0, 1):
-		return "S"
-	if d == Vector2i(1, 0):
-		return "E"
-	if d == Vector2i(-1, 0):
-		return "W"
-	return "?"
+	match d:
+		Vector2i(0, -1): return "↑"
+		Vector2i(0, 1):  return "↓"
+		Vector2i(1, 0):  return "→"
+		Vector2i(-1, 0): return "←"
+		Vector2i(1, -1): return "↗"
+		Vector2i(-1, -1): return "↖"
+		Vector2i(1, 1):  return "↘"
+		Vector2i(-1, 1): return "↙"
+		_: return "?"
+
+func _update_chronicle_ui() -> void:
+	# 右下のコンパクトパネル(最新 12 件)
+	var compact := get_node_or_null(^"UI/EventChroniclePanel") as Panel
+	if compact != null:
+		var empty := compact.get_node_or_null(^"EmptyState") as Label
+		var body := compact.get_node_or_null(^"ChronicleBody") as RichTextLabel
+		if body == null:
+			body = RichTextLabel.new()
+			body.name = "ChronicleBody"
+			body.bbcode_enabled = true
+			body.scroll_active = true
+			body.scroll_following = true
+			body.offset_left = 16.0
+			body.offset_top = 76.0
+			body.offset_right = 292.0
+			body.offset_bottom = 340.0
+			body.add_theme_font_size_override("normal_font_size", 10)
+			body.add_theme_color_override("default_color", Color(0.820, 0.808, 0.784, 1))
+			compact.add_child(body)
+		var has_events := not chronicle_entries.is_empty()
+		if empty != null:
+			empty.visible = not has_events
+		body.visible = has_events
+		if has_events:
+			var compact_start: int = max(0, chronicle_entries.size() - CHRONICLE_COMPACT_LIMIT)
+			var lines: Array[String] = []
+			for i in range(compact_start, chronicle_entries.size()):
+				lines.append(_chronicle_line(chronicle_entries[i]))
+			body.text = "\n".join(lines)
+
+func _chronicle_line(e: Dictionary) -> String:
+	var icon: String = _chronicle_icon(e.get("kind", ""))
+	var color: String = _chronicle_color(e.get("kind", ""))
+	var tick_str := "[color=#6a6660]t%04d[/color]" % int(e.get("tick", 0))
+	return "%s  [color=%s]%s[/color] %s" % [tick_str, color, icon, e.get("text", "")]
+
+func _chronicle_icon(kind: String) -> String:
+	match kind:
+		"death":
+			return "🕊"
+		"attack":
+			return "💢"
+		"give":
+			return "📤"
+		"embrace":
+			return "❤"
+		_:
+			return "·"
+
+func _chronicle_color(kind: String) -> String:
+	match kind:
+		"death":
+			return "#c0b8a8"
+		"attack":
+			return "#e07070"
+		"give":
+			return "#6acfb0"
+		"embrace":
+			return "#e0a0c0"
+		_:
+			return "#8a8680"
 
 func _update_speech_log_ui() -> void:
 	var panel := get_node_or_null(^"UI/LogPanel")
@@ -696,6 +861,13 @@ func _update_speech_log_ui() -> void:
 func _spawn_agents(defs: Array, w: World, seed_: int) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_ ^ 0xA5A5A5A5
+	var agents_cfg: Dictionary = config.get("agents", {})
+	var costs_cfg: Dictionary = config.get("costs", {})
+	var capacity: int = int(agents_cfg.get("inventory_capacity", Agent.DEFAULT_INVENTORY_CAPACITY))
+	var hunger_range: Array = agents_cfg.get("initial_hunger_range", [80, 80])
+	var hunger_min: int = int(hunger_range[0])
+	var hunger_max: int = int(hunger_range[1] if hunger_range.size() > 1 else hunger_range[0])
+	var stamina_initial: int = int(costs_cfg.get("stamina_initial", Agent.STAMINA_INITIAL))
 	var out: Array = []
 	var placed: Dictionary = {}
 	for i in defs.size():
@@ -707,6 +879,13 @@ func _spawn_agents(defs: Array, w: World, seed_: int) -> Array:
 		a.cooperative = int(d["cooperative"])
 		a.aggressive = int(d["aggressive"])
 		a.curious = int(d["curious"])
+		a.inventory_capacity = capacity
+		a.stamina = stamina_initial
+		# 初期 hunger を range 内でランダム化(均一だと交換の必要性が生まれない)
+		if hunger_min < hunger_max:
+			a.hunger = rng.randi_range(hunger_min, hunger_max)
+		else:
+			a.hunger = hunger_min
 		a.grid_pos = _pick_spawn(w, rng, placed)
 		placed[a.grid_pos] = true
 		out.append(a)
@@ -791,8 +970,8 @@ func _format_agent_list() -> String:
 		]
 		var sym := "♀" if a.gender == "female" else "♂"
 		var gender_color := "#d28ac8" if a.gender == "female" else "#7da8e0"
-		var row := "[color=%s]■[/color]  [b]%s[/b]  [color=%s]%s[/color] [color=#8a8680]age %d · g1  hp %d hg %d[/color]" % [
-			hex, a.agent_name, gender_color, sym, 20 + (a.id % 10), a.health, a.hunger,
+		var row := "[color=%s]■[/color]  [b]%s[/b]  [color=%s]%s[/color] [color=#8a8680]age %d · hp %d hg %d st %d[/color]" % [
+			hex, a.agent_name, gender_color, sym, 20 + (a.id % 10), a.health, a.hunger, a.stamina,
 		]
 		# 行全体をクリック可能に(meta = agent_id)
 		lines.append("[url=%d]%s[/url]" % [a.id, row])
@@ -824,6 +1003,9 @@ func _select_agent(id: int) -> void:
 	var world_view := get_node_or_null(world_view_path) as WorldView
 	if world_view != null:
 		world_view.set_selected_agent(id)
+	var relation := get_node_or_null(^"ViewStack/RelationView") as RelationGraphView
+	if relation != null:
+		relation.set_selected_agent(id)
 
 func _get_agent_by_id(id: int) -> Agent:
 	for a in agents:
@@ -862,9 +1044,9 @@ func _update_agent_detail() -> void:
 	content.offset_left = 16
 	content.offset_top = 44
 	content.offset_right = 252
-	content.offset_bottom = 300
-	content.custom_minimum_size = Vector2(236, 260)
-	content.add_theme_constant_override("separation", 8)
+	content.offset_bottom = 420
+	content.custom_minimum_size = Vector2(236, 376)
+	content.add_theme_constant_override("separation", 6)
 	panel.add_child(content)
 
 	var color: Color = a.badge_color()
@@ -886,11 +1068,12 @@ func _update_agent_detail() -> void:
 	stats.bbcode_enabled = true
 	stats.fit_content = true
 	stats.scroll_active = false
-	stats.custom_minimum_size = Vector2(236, 52)
+	stats.custom_minimum_size = Vector2(236, 72)
 	stats.add_theme_font_size_override("normal_font_size", 11)
-	stats.text = "[color=#8a8680]空腹度[/color]  %s  [b]%d[/b]/100\n[color=#8a8680]体力  [/color]  %s  [b]%d[/b]/100" % [
+	stats.text = "[color=#8a8680]空腹度[/color]  %s  [b]%d[/b]/100\n[color=#8a8680]体力  [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]元気度[/color]  %s  [b]%d[/b]/100" % [
 		_bar(a.hunger, 100, 14), a.hunger,
 		_bar(a.health, 100, 14), a.health,
+		_bar(a.stamina, 100, 14), a.stamina,
 	]
 	content.add_child(stats)
 
@@ -928,6 +1111,44 @@ func _update_agent_detail() -> void:
 	var terrain_name: String = terrain_names[world.get_terrain(a.grid_pos.x, a.grid_pos.y)]
 	loc.text = "[color=#8a8680]場所[/color]  (%d, %d) %s" % [a.grid_pos.x, a.grid_pos.y, terrain_name]
 	content.add_child(loc)
+
+	# inventory
+	var inv := RichTextLabel.new()
+	inv.bbcode_enabled = true
+	inv.fit_content = true
+	inv.scroll_active = false
+	inv.custom_minimum_size = Vector2(236, 28)
+	inv.add_theme_font_size_override("normal_font_size", 11)
+	var inv_slots: Array[String] = []
+	for k in a.inventory_capacity:
+		if k < a.inventory.size():
+			inv_slots.append("[color=#d0a050]●[/color]")
+		else:
+			inv_slots.append("[color=#3a3e46]○[/color]")
+	inv.text = "[color=#8a8680]所持[/color]  %s  [color=#8a8680]%d/%d[/color]" % [
+		" ".join(inv_slots), a.inventory.size(), a.inventory_capacity
+	]
+	content.add_child(inv)
+
+	# top relations
+	var rels_raw: Array = a.top_relations(3, agents)
+	if rels_raw.size() > 0:
+		var rels_label := RichTextLabel.new()
+		rels_label.bbcode_enabled = true
+		rels_label.fit_content = true
+		rels_label.scroll_active = false
+		rels_label.custom_minimum_size = Vector2(236, 72)
+		rels_label.add_theme_font_size_override("normal_font_size", 11)
+		var lines: Array[String] = ["[color=#8a8680]関係 top 3[/color]"]
+		for entry in rels_raw:
+			var n: String = entry["name"]
+			var aff: int = int(entry["affection"])
+			var trust_v: int = int(entry["trust"])
+			var tag_color := "#6acfb0" if aff > 0 else ("#e07070" if aff < 0 else "#8a8680")
+			var sign := "+" if aff > 0 else ""
+			lines.append("  [color=%s][b]%s[/b][/color]  aff %s%d · trust %d" % [tag_color, n, sign, aff, trust_v])
+		rels_label.text = "\n".join(lines)
+		content.add_child(rels_label)
 
 func _bar(value: int, mx: int, width: int) -> String:
 	var filled := int(round(float(value) / float(mx) * float(width)))

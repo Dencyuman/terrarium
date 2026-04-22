@@ -14,6 +14,8 @@ const SPEECH_MAX_CHARS: int = 10
 const SPEECH_BUBBLE_FONT_SIZE: int = 9
 const VISION_RADIUS: int = 3
 const DRAG_THRESHOLD: float = 5.0
+const SLOT_DOT_RADIUS: float = 2.0
+const SLOT_DOT_SPACING: float = 5.0
 
 var world: World
 var agents: Array = []
@@ -254,6 +256,24 @@ func _draw_agents() -> void:
 		draw_arc(center, BADGE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.9), 2.0)
 		draw_arc(center, BADGE_RADIUS - 1, 0, TAU, 48, Color(1, 1, 1, 0.75), 1.0)
 		_draw_badge_label(agent.agent_name, center)
+		_draw_inventory_dots(agent, center)
+
+func _draw_inventory_dots(agent: Agent, badge_center: Vector2) -> void:
+	var cap: int = agent.inventory_capacity
+	if cap <= 0:
+		return
+	var used: int = agent.inventory.size()
+	var total_w: float = SLOT_DOT_SPACING * float(cap - 1)
+	var start_x: float = badge_center.x - total_w / 2.0
+	var y: float = badge_center.y + BADGE_RADIUS + 4.5
+	for i in cap:
+		var pos := Vector2(start_x + SLOT_DOT_SPACING * float(i), y)
+		if i < used:
+			draw_circle(pos, SLOT_DOT_RADIUS, Color(0.88, 0.72, 0.30, 0.95))   # 埋まってる = アンバー(食料)
+			draw_arc(pos, SLOT_DOT_RADIUS, 0, TAU, 16, Color(0.10, 0.12, 0.16, 0.9), 0.6)
+		else:
+			draw_circle(pos, SLOT_DOT_RADIUS - 0.5, Color(0.30, 0.32, 0.36, 0.7))   # 空 = 暗灰
+			draw_arc(pos, SLOT_DOT_RADIUS - 0.5, 0, TAU, 16, Color(0.50, 0.52, 0.56, 0.5), 0.6)
 
 func _draw_badge_label(text: String, center: Vector2) -> void:
 	var text_size: Vector2 = badge_font.get_string_size(
