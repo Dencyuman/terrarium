@@ -31,12 +31,12 @@ const COMMON_SPECS := [
 # "impassable": 通れない / "no_food": 食料が発生しない
 const TERRAIN_ROWS := [
 	{"key": "grass",  "label": "草",
-	 "move_path": ["costs", "move_hunger"],
+	 "move_path": ["costs", "grass_move_hunger"],
 	 "spawn_path": ["resources", "initial_spawn", "grass"],
 	 "regen_path": ["resources", "regen_per_tick", "grass"],
 	 "passable": true},
 	{"key": "forest", "label": "森",
-	 "move_path": ["costs", "move_hunger"],
+	 "move_path": ["costs", "forest_move_hunger"],
 	 "spawn_path": ["resources", "initial_spawn", "forest"],
 	 "regen_path": ["resources", "regen_per_tick", "forest"],
 	 "passable": true},
@@ -218,17 +218,18 @@ func _update_terrain_info(idx: int) -> void:
 	var spawn_forest: float = float(_get_nested(base_config, ["resources", "initial_spawn", "forest"], 0.12))
 	var regen_grass: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "grass"], 0.003))
 	var regen_forest: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "forest"], 0.008))
-	var move_c: int = int(_get_nested(base_config, ["costs", "move_hunger"], 2))
+	var grass_c: int = int(_get_nested(base_config, ["costs", "grass_move_hunger"], 2))
+	var forest_c: int = int(_get_nested(base_config, ["costs", "forest_move_hunger"], 2))
 	var rock_c: int = int(_get_nested(base_config, ["costs", "rock_move_hunger"], 4))
 	match idx:
 		0:
-			info.text = "草: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生 / 通れる" % [move_c, spawn_grass * 100.0, regen_grass]
+			info.text = "草: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生 / 通れる" % [grass_c, spawn_grass * 100.0, regen_grass]
 		1:
 			info.text = "水: 通れない。食料は発生しない。"
 		2:
-			info.text = "森: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生(草より豊か) / 通れる" % [move_c, spawn_forest * 100.0, regen_forest]
+			info.text = "森: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生(草より豊か) / 通れる" % [forest_c, spawn_forest * 100.0, regen_forest]
 		3:
-			info.text = "岩: 移動で満腹度 -%d(草/森より厳しい) / 食料は発生しない / 通れる" % [rock_c]
+			info.text = "岩: 移動で満腹度 -%d / 食料は発生しない / 通れる" % [rock_c]
 		_:
 			info.text = ""
 

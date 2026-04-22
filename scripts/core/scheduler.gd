@@ -46,7 +46,8 @@ var phase: int = Phase.IDLE
 
 # コスト(config.json の costs セクションで上書き可能)
 var tick_base_hunger: int = 1
-var move_hunger: int = 2
+var grass_move_hunger: int = 2
+var forest_move_hunger: int = 2
 var rock_move_hunger: int = 4   # 岩タイル上の move に適用される hunger コスト(草地/森より高い)
 var speak_hunger: int = 1
 var eat_hunger_restore: int = 25
@@ -85,7 +86,10 @@ func _init(world_: World, resources_: ResourceField, agents_: Array, seed_: int,
 
 func configure_costs(cfg: Dictionary) -> void:
 	tick_base_hunger = int(cfg.get("tick_base_hunger", tick_base_hunger))
-	move_hunger = int(cfg.get("move_hunger", move_hunger))
+	# 互換: 旧 "move_hunger" が残っていれば grass/forest のデフォルトとして適用
+	var legacy_move: int = int(cfg.get("move_hunger", 2))
+	grass_move_hunger = int(cfg.get("grass_move_hunger", legacy_move))
+	forest_move_hunger = int(cfg.get("forest_move_hunger", legacy_move))
 	rock_move_hunger = int(cfg.get("rock_move_hunger", rock_move_hunger))
 	speak_hunger = int(cfg.get("speak_hunger", speak_hunger))
 	eat_hunger_restore = int(cfg.get("eat_hunger_restore", eat_hunger_restore))
@@ -391,9 +395,13 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			occupied.erase(agent.grid_pos)
 			occupied[final_pos] = agent.id
 			agent.grid_pos = final_pos
-			# 岩タイル(terrain == 3)に踏み込んだ場合は hunger コスト増。
+			# 踏み込んだタイルの種別ごとに hunger コストが異なる。
 			var land_t: int = world.get_terrain(final_pos.x, final_pos.y)
-			var h_cost: int = rock_move_hunger if land_t == 3 else move_hunger
+			var h_cost: int
+			match land_t:
+				2: h_cost = forest_move_hunger
+				3: h_cost = rock_move_hunger
+				_: h_cost = grass_move_hunger
 			agent.hunger = max(0, agent.hunger - h_cost)
 			agent.spend_stamina(move_stamina)
 			action.succeeded = true

@@ -500,14 +500,14 @@ text = "OBSERVER MODE · NO-INTERVENTION"
 [node name="CostStatus" type="Label" parent="UI/FooterBar"]
 offset_left = 1110.0
 offset_top = 8.0
-offset_right = 1310.0
+offset_right = 1288.0
 offset_bottom = 26.0
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.820, 0.808, 0.784, 1)
 text = "$0.0000  ·  in 0.0k / out 0.0k tok"
 
 [node name="BackToTopBtn" type="Button" parent="UI/FooterBar"]
-offset_left = 1296.0
+offset_left = 1300.0
 offset_top = 4.0
 offset_right = 1428.0
 offset_bottom = 28.0
