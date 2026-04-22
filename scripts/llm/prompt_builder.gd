@@ -33,6 +33,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
     - `targets`: an array of names → addressed to multiple agents at once
     - omit both → no one in particular (announcement / muttering to yourself)
   All living agents within your vision radius hear the words regardless. But naming an addressee (via `target` or `targets`) is the *physical act of attribution*: the harness only updates the named agent(s)' `affection` and `trust` toward you from this utterance. Unaddressed speech leaves no relational trace — words heard but not tied to anyone. If you are speaking *to* someone (calling their name, asking them, threatening them, comforting them), set an addressee; otherwise the harness records your words as uncommitted.
+- "reproduce_with": attempt to conceive a child with an orthogonally adjacent agent. field `target`: that agent's name. Physical preconditions the harness enforces: `target` must be alive, a **different gender** from you, and **adjacent**. Costs stamina (significant) and hunger regardless of outcome. Succeeds probabilistically (per-terrarium probability). On success a child is born on a nearby empty tile with personality traits mixed from both parents (± random noise) and `age_days = 0`. Consent is **not** a physical gate — if you meet the physical conditions you can initiate; whether such an act is socially acceptable, wanted, or condemnable is purely a social / linguistic phenomenon the harness does not adjudicate. The target is recorded as having participated (parent_ids) but the harness does not ask them first.
 - "look": gaze into the distance in one cardinal direction. field `direction`: "north" / "south" / "east" / "west" (diagonals are auto-snapped to the nearest cardinal). You peer in a strip **5 tiles deep × 3 tiles wide** centered on your line of sight. Every tile in that strip is remembered in your `scouted_tiles` memory (terrain type, food present, agent/corpse present) along with the tick when you looked. `look` costs stamina but lets you perceive beyond the default vision radius. The memory is a snapshot: if you look east at tick 10 and see food at (15,5), someone else may consume it by tick 15 — your memory still shows it until you look again. No hunger cost.
 - "wait": do nothing.
 
@@ -42,6 +43,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
   - `speak`: up to 1 (one voice, one utterance)
   - `wait`: up to 1
   - `look`: up to 1 (you can focus on one direction per tick)
+  - `reproduce_with`: up to 1
   - `move`: up to 3 (walk several steps)
   - `take`: up to 5 (no per-kind cap beyond the 5-action bundle cap)
   - `eat` / `give` / `attack` / `embrace`: up to 2 each (body can do each a couple of times)
@@ -97,7 +99,7 @@ static func tool_schema_flat() -> Dictionary:
 		"type": "object",
 		"properties": {
 			"kind": {"type": "string", "enum": [
-				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace", "look"
+				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace", "look", "reproduce_with"
 			]},
 			"direction": {"type": "string", "enum": [
 				"north", "south", "east", "west",
@@ -228,10 +230,19 @@ static func tool_schema() -> Dictionary:
 			},
 			"required": ["kind", "direction"],
 			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "reproduce_with"},
+				"target": {"type": "string", "description": "Adjacent opposite-gender agent's name."}
+			},
+			"required": ["kind", "target"],
+			"additionalProperties": false
 		}
 	]
 	var per_kind_limits := {
-		"wait": 1, "speak": 1, "move": 3, "look": 1,
+		"wait": 1, "speak": 1, "move": 3, "look": 1, "reproduce_with": 1,
 		"take": 5, "eat": 2, "give": 2, "attack": 2, "embrace": 2,
 	}
 	var all_of: Array = []

@@ -844,6 +844,12 @@ func _append_log_entry(agent: Agent, act: Action) -> void:
 			line = "%s  [color=%s][b]%s[/b][/color]  [color=#a7c5e0]— 眺める %s[/color]" % [
 				tick_str, hex, agent.agent_name, ldir
 			]
+		Action.Kind.REPRODUCE_WITH:
+			var rp_target := _get_agent_by_id(act.target_id)
+			var rp_name := rp_target.agent_name if rp_target != null else "?"
+			line = "%s  [color=%s][b]%s[/b][/color] [color=#d893b8]~ reproduce ~[/color] [b]%s[/b]" % [
+				tick_str, hex, agent.agent_name, rp_name
+			]
 		_:
 			return
 	# 理由を sub-line として併記(空でなければ)
@@ -1113,6 +1119,10 @@ func _chronicle_line(e: Dictionary) -> String:
 
 func _chronicle_icon(kind: String) -> String:
 	match kind:
+		"birth":
+			return "💫"
+		"reproduce_fail":
+			return "·"
 		"death":
 			return "🕊"
 		"attack":
@@ -1126,6 +1136,10 @@ func _chronicle_icon(kind: String) -> String:
 
 func _chronicle_color(kind: String) -> String:
 	match kind:
+		"birth":
+			return "#d893b8"
+		"reproduce_fail":
+			return "#8a8680"
 		"death":
 			return "#c0b8a8"
 		"attack":

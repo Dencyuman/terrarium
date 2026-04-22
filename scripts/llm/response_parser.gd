@@ -113,6 +113,11 @@ static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) ->
 			if not DIRECTIONS.has(ldir_raw):
 				return Action.wait("parse: bad look direction %s" % ldir_raw)
 			return Action.look(DIRECTIONS[ldir_raw], reason)
+		"reproduce_with", "reproduce", "mate":
+			var tid4: int = _parse_single_target(d.get("target", null), agents)
+			if tid4 < 0:
+				return Action.wait("parse: reproduce_with missing target")
+			return Action.reproduce_with(tid4, reason)
 		_:
 			return null
 

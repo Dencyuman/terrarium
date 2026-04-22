@@ -1,7 +1,7 @@
 class_name Action
 extends RefCounted
 
-enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE, LOOK }
+enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE, LOOK, REPRODUCE_WITH }
 
 var kind: int = Kind.WAIT
 var direction: Vector2i = Vector2i.ZERO
@@ -63,6 +63,14 @@ static func embrace(target_id_: int, reason_: String = "") -> Action:
 	a.reason = reason_
 	return a
 
+static func reproduce_with(target_id_: int, reason_: String = "") -> Action:
+	# Phase 5: 合意ベースの生殖。異性間 + 隣接 + 双方が同 tick で相互指定が必須。
+	var a := Action.new()
+	a.kind = Kind.REPRODUCE_WITH
+	a.target_id = target_id_
+	a.reason = reason_
+	return a
+
 static func look(dir: Vector2i, reason_: String = "") -> Action:
 	# 一時的な遠方観察。自身から dir の方向に矩形(5×3)を覗き見る。
 	# 結果は scouted_tiles に記憶される(vision 半径を越えた情報の一次取得)。
@@ -91,4 +99,5 @@ func kind_label() -> String:
 		Kind.ATTACK: return "attack"
 		Kind.EMBRACE: return "embrace"
 		Kind.LOOK: return "look"
+		Kind.REPRODUCE_WITH: return "reproduce_with"
 		_: return "?"

@@ -33,6 +33,7 @@ const PER_KIND_MAX := {
 	Action.Kind.EMBRACE: 2,
 	Action.Kind.SPEAK: 1,
 	Action.Kind.LOOK: 1,
+	Action.Kind.REPRODUCE_WITH: 1,
 }
 
 const LOOK_LENGTH: int = 5   # 覗き見る奥行き(方向 5 マス)
@@ -72,6 +73,38 @@ var look_stamina: int = 2
 # Phase 5 加齢 / 老衰
 var elder_age_days: int = 6      # この日数以上で老衰による health drain が始まる
 var elder_health_drain: int = 2  # 老衰時の 1 tick あたり health 減少
+# Phase 5 生殖
+var reproduce_stamina_cost: int = 20
+var reproduce_hunger_cost: int = 10
+var reproduce_success_prob: float = 0.5
+
+# tick 内で既に生殖が成立したペア集合(重複妊娠防止)。finalize_tick で clear。
+# key: "min_id|max_id" 形式のソート済みペア文字列。
+var reproduce_paired_this_tick: Dictionary = {}
+
+# 誕生した子エージェントの命名プール。先頭から使い切ったら "新%d" に fallback。
+const NEWBORN_POOL := [
+	{"name": "暁", "romaji": "Akatsuki"},
+	{"name": "澪", "romaji": "Mio"},
+	{"name": "凛", "romaji": "Rin"},
+	{"name": "篤", "romaji": "Atsushi"},
+	{"name": "朱", "romaji": "Ake"},
+	{"name": "翠", "romaji": "Midori"},
+	{"name": "柚", "romaji": "Yuzu"},
+	{"name": "薫", "romaji": "Kaoru"},
+	{"name": "凪", "romaji": "Nagi"},
+	{"name": "麗", "romaji": "Rei"},
+	{"name": "颯", "romaji": "Hayate"},
+	{"name": "蒼", "romaji": "Aoi"},
+	{"name": "碧", "romaji": "Heki"},
+	{"name": "葉", "romaji": "Ha"},
+	{"name": "陽", "romaji": "Haru"},
+	{"name": "瑞", "romaji": "Mizu"},
+	{"name": "紡", "romaji": "Tsumugi"},
+	{"name": "結", "romaji": "Yui"},
+	{"name": "燈", "romaji": "Tomoshi"},
+	{"name": "稔", "romaji": "Minoru"},
+]
 
 # 関係性の更新量(config.json の relations セクションで上書き可能)
 var rel_affection_per_give: int = 10
@@ -116,6 +149,9 @@ func configure_costs(cfg: Dictionary) -> void:
 	look_stamina = int(cfg.get("look_stamina", look_stamina))
 	elder_age_days = int(cfg.get("elder_age_days", elder_age_days))
 	elder_health_drain = int(cfg.get("elder_health_drain", elder_health_drain))
+	reproduce_stamina_cost = int(cfg.get("reproduce_stamina_cost", reproduce_stamina_cost))
+	reproduce_hunger_cost = int(cfg.get("reproduce_hunger_cost", reproduce_hunger_cost))
+	reproduce_success_prob = float(cfg.get("reproduce_success_prob", reproduce_success_prob))
 
 func configure_relations(cfg: Dictionary) -> void:
 	rel_affection_per_give = int(cfg.get("affection_per_give", rel_affection_per_give))
@@ -250,6 +286,8 @@ func finalize_tick() -> void:
 		for a in agents:
 			if a.is_alive():
 				a.age_days += 1
+	# 生殖ペアの tick-local 記録をクリア(次 tick で持ち越さない)
+	reproduce_paired_this_tick.clear()
 	phase = Phase.IDLE
 	phase_changed.emit("Idle")
 	tick_completed.emit(tick)
@@ -448,6 +486,8 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			action.succeeded = true
 		Action.Kind.LOOK:
 			_apply_look(agent, action)
+		Action.Kind.REPRODUCE_WITH:
+			_apply_reproduce_with(agent, action)
 
 # --- 新しい物理動作(Phase 4) ---
 
@@ -472,7 +512,40 @@ func _within_vision(a: Agent, b: Agent) -> bool:
 func _emit_event(event: Dictionary) -> void:
 	event_emitted.emit(event)
 
+# 死亡時の inventory ドロップ: 死体タイルと周囲空きタイル(草/森で食料未生成)に食料を残す。
+# 他のエージェントが後から take できるので、殺害や餓死が局所的な食料再分配を生む。
+func _drop_inventory_on_death(victim: Agent) -> void:
+	var drops: int = victim.inventory.size()
+	if drops == 0:
+		return
+	var candidates: Array = []
+	# 死亡位置を優先、次に 8 近傍(草/森で既存食料なし・通行可タイル)
+	var order: Array = [Vector2i.ZERO]
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			order.append(Vector2i(dx, dy))
+	for d: Vector2i in order:
+		var nx: int = victim.grid_pos.x + d.x
+		var ny: int = victim.grid_pos.y + d.y
+		if not _in_bounds(nx, ny):
+			continue
+		var t: int = world.get_terrain(nx, ny)
+		# 草地・森のみ。岩・水には食料を残せない(物理的に根付かない)。
+		if t != 0 and t != 2:
+			continue
+		if resources.has_food(nx, ny):
+			continue
+		candidates.append(Vector2i(nx, ny))
+		if candidates.size() >= drops:
+			break
+	for i in range(min(drops, candidates.size())):
+		resources.food[candidates[i].y][candidates[i].x] = true
+	victim.inventory.clear()
+
 func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
+	_drop_inventory_on_death(victim)
 	var text: String
 	if cause == "attack" and killer != null:
 		text = "%s が %s に攻撃されて倒れた" % [victim.agent_name, killer.agent_name]
@@ -709,6 +782,144 @@ func _apply_look(agent: Agent, action: Action) -> void:
 	agent.spend_stamina(look_stamina)
 	action.succeeded = true
 
+# 生殖は物理アクション。harness は以下の物理制約のみを設ける:
+#   - target が生存していること
+#   - 自分自身でないこと
+#   - 異性(gender が異なる)
+#   - 隣接(Chebyshev 距離 1)
+#   - stamina コストを払える
+# 合意は物理制約ではなく社会通念。harness は強制しない(暴力的生殖も物理的に成立する)。
+# 確率 reproduce_success_prob で妊娠、失敗してもコストは消費される。
+# 同 tick 内の同一ペアで 2 回目以降は物理的には重複扱いで silent fail(双子防止)。
+func _apply_reproduce_with(agent: Agent, action: Action) -> void:
+	var target := _get_agent_by_id(action.target_id)
+	if target == null or not target.is_alive():
+		action.failure_note = "target_invalid"
+		return
+	if target.id == agent.id:
+		action.failure_note = "target_invalid"
+		return
+	if target.gender == agent.gender:
+		action.failure_note = "same_gender"
+		return
+	if not _is_adjacent(agent, target):
+		action.failure_note = "not_adjacent"
+		return
+	if not agent.can_afford_stamina(reproduce_stamina_cost):
+		action.failure_note = "exhausted"
+		return
+	var pair_key: String = "%d|%d" % [min(agent.id, target.id), max(agent.id, target.id)]
+	if reproduce_paired_this_tick.has(pair_key):
+		# 同じペアで既に今 tick 成立済み
+		action.failure_note = "already_mated_this_tick"
+		return
+	# コスト消費(成功失敗によらず)
+	agent.spend_stamina(reproduce_stamina_cost)
+	agent.hunger = max(0, agent.hunger - reproduce_hunger_cost)
+	reproduce_paired_this_tick[pair_key] = true
+	# 確率判定
+	if rng.randf() > reproduce_success_prob:
+		action.succeeded = true
+		action.failure_note = "infertile"
+		agent.append_life_event(tick, "%s と交わったが子は宿らなかった" % target.agent_name)
+		target.append_life_event(tick, "%s と交わったが子は宿らなかった" % agent.agent_name)
+		_emit_event({
+			"tick": tick,
+			"kind": "reproduce_fail",
+			"actor_id": agent.id,
+			"target_id": target.id,
+			"position": agent.grid_pos,
+			"text": "%s と %s が交わったが子は宿らなかった" % [agent.agent_name, target.agent_name],
+		})
+		return
+	# 隣接空きマスを探す(親の周り→相手の周りの順)
+	var birth_pos: Vector2i = _find_empty_adjacent(agent.grid_pos)
+	if birth_pos.x < 0:
+		birth_pos = _find_empty_adjacent(target.grid_pos)
+	if birth_pos.x < 0:
+		action.succeeded = true
+		action.failure_note = "no_space_for_birth"
+		agent.append_life_event(tick, "%s と結ばれたが子の居場所が無かった" % target.agent_name)
+		target.append_life_event(tick, "%s と結ばれたが子の居場所が無かった" % agent.agent_name)
+		return
+	var child := _spawn_child(agent, target, birth_pos)
+	agents.append(child)
+	action.succeeded = true
+	_emit_event({
+		"tick": tick,
+		"kind": "birth",
+		"actor_id": agent.id,
+		"target_id": target.id,
+		"position": child.grid_pos,
+		"child_id": child.id,
+		"text": "%s と %s の間に %s が生まれた" % [agent.agent_name, target.agent_name, child.agent_name],
+	})
+	agent.append_life_event(tick, "%s との間に %s を授かった" % [target.agent_name, child.agent_name])
+	target.append_life_event(tick, "%s との間に %s を授かった" % [agent.agent_name, child.agent_name])
+
+# 親周辺の空き(通行可 + 他者占有なし)タイルを探す。
+func _find_empty_adjacent(origin: Vector2i) -> Vector2i:
+	var occupied_set: Dictionary = {}
+	for a in agents:
+		if a.is_alive():
+			occupied_set[a.grid_pos] = true
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var nx: int = origin.x + dx
+			var ny: int = origin.y + dy
+			if not _in_bounds(nx, ny):
+				continue
+			if not world.is_passable(nx, ny):
+				continue
+			var p := Vector2i(nx, ny)
+			if occupied_set.has(p):
+				continue
+			return p
+	return Vector2i(-1, -1)
+
+# 子エージェント生成。性格は両親平均 ± ノイズ(±10)、性別は 50/50、
+# 初期 age_days 0、親の id を parent_ids に。名前は NEWBORN_POOL から。
+func _spawn_child(parent_a: Agent, parent_b: Agent, birth_pos: Vector2i) -> Agent:
+	var child := Agent.new(_next_child_id())
+	var pool_idx: int = (child.id) % NEWBORN_POOL.size()
+	# 既出名との衝突は避ける(愚直にチェック、衝突したら "新%d" に逃げる)
+	var name_used: Dictionary = {}
+	for a in agents:
+		name_used[a.agent_name] = true
+	var nm: String = NEWBORN_POOL[pool_idx]["name"]
+	var rj: String = NEWBORN_POOL[pool_idx]["romaji"]
+	if name_used.has(nm):
+		nm = "新%d" % child.id
+		rj = "Shin%d" % child.id
+	child.agent_name = nm
+	child.romaji = rj
+	child.gender = "female" if rng.randf() < 0.5 else "male"
+	child.cooperative = _mix_personality(parent_a.cooperative, parent_b.cooperative)
+	child.aggressive = _mix_personality(parent_a.aggressive, parent_b.aggressive)
+	child.curious = _mix_personality(parent_a.curious, parent_b.curious)
+	child.grid_pos = birth_pos
+	child.age_days = 0
+	child.hunger = Agent.HUNGER_INITIAL
+	child.health = Agent.HEALTH_INITIAL
+	child.stamina = Agent.STAMINA_INITIAL
+	child.inventory_capacity = parent_a.inventory_capacity
+	child.parent_ids = [parent_a.id, parent_b.id]
+	return child
+
+func _mix_personality(a: int, b: int) -> int:
+	var avg: int = (a + b) / 2
+	var noise: int = int(round(rng.randf_range(-10.0, 10.0)))
+	return clampi(avg + noise, 0, 100)
+
+func _next_child_id() -> int:
+	var max_id: int = -1
+	for a in agents:
+		if a.id > max_id:
+			max_id = a.id
+	return max_id + 1
+
 func _terrain_name(t: int) -> String:
 	match t:
 		1: return "water"
@@ -802,6 +1013,8 @@ func _summarize_action(action: Action) -> String:
 				Vector2i(-1, 0): ldir = "←"
 				_: ldir = "?"
 			base = "look " + ldir
+		Action.Kind.REPRODUCE_WITH:
+			base = "reproduce_with"
 		Action.Kind.SPEAK:
 			base = "speak \"%s\"" % action.speech_text
 		_:

@@ -123,6 +123,8 @@ func _format_action_row(tick_s: String, agent_name: String, kind: String, d: Dic
 		"look":
 			var ldir = d.get("direction", [0, 0])
 			return "%s  [color=#a7c5e0]眺める %s[/color]%s%s" % [head, _dir_label(ldir), fail_tag, reason_tail]
+		"reproduce_with":
+			return "%s  [color=#d893b8]~ reproduce ~ 他者[/color]%s%s" % [head, fail_tag, reason_tail]
 		"speak":
 			var text = str(d.get("speech_text", ""))
 			var tids = d.get("speech_target_ids", [])
@@ -143,6 +145,8 @@ func _format_event_row(tick_s: String, kind: String, d: Dictionary) -> String:
 		"attack":  color = "#e07070"; icon = "💢"
 		"give":    color = "#6acfb0"; icon = "📤"
 		"embrace": color = "#e0a0c0"; icon = "❤"
+		"birth":   color = "#d893b8"; icon = "💫"
+		"reproduce_fail": color = "#8a8680"; icon = "·"
 	return "%s  [color=%s][b]%s[/b]  %s[/color]" % [tick_s, color, icon, text]
 
 func _dir_label(dir) -> String:

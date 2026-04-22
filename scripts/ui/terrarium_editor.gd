@@ -27,6 +27,9 @@ const COMMON_SPECS := [
 	[["costs", "attack_health_damage"],      "攻撃1回のダメージ",                  "大きいほど過酷", 0.0, 100.0, 1.0],
 	[["costs", "elder_age_days"],            "老衰が始まる年齢(日)",               "大きいほど長寿", 1.0, 100.0, 1.0],
 	[["costs", "elder_health_drain"],        "老衰時の体力減少(1tickあたり)",      "大きいほど短命", 0.0, 20.0, 1.0],
+	[["costs", "reproduce_stamina_cost"],    "生殖の元気度コスト",                 "大きいほど体力必須", 0.0, 100.0, 1.0],
+	[["costs", "reproduce_hunger_cost"],     "生殖の満腹度コスト",                 "大きいほど飢えに弱くなる", 0.0, 100.0, 1.0],
+	[["costs", "reproduce_success_prob"],    "生殖成功確率 (0..1)",                "大きいほど妊娠しやすい", 0.0, 1.0, 0.05],
 ]
 
 # 「地形別」タブ用の 1 行定義。各地形がどの field を持つかは違うので spec は地形ごと。

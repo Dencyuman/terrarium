@@ -51,7 +51,10 @@
     "wait_stamina_restore": 10,
     "look_stamina": 2,
     "elder_age_days": 6,
-    "elder_health_drain": 2
+    "elder_health_drain": 2,
+    "reproduce_stamina_cost": 20,
+    "reproduce_hunger_cost": 10,
+    "reproduce_success_prob": 0.5
   },
   "resources": {
     "_comment": "食料スポーン率(確率、地形別)。grass/forest のみ食料が出る。",
