@@ -1370,6 +1370,11 @@ func _update_agent_detail() -> void:
 		return
 	var empty_hint := panel.get_node_or_null(^"EmptyHint") as Label
 	var empty_sub := panel.get_node_or_null(^"EmptySub") as Label
+	# 古い DetailScroll / DetailContent(旧構造)どちらも掃除
+	var old_scroll := panel.get_node_or_null(^"DetailScroll")
+	if old_scroll != null:
+		panel.remove_child(old_scroll)
+		old_scroll.queue_free()
 	var old_content := panel.get_node_or_null(^"DetailContent")
 	if old_content != null:
 		panel.remove_child(old_content)
@@ -1390,15 +1395,22 @@ func _update_agent_detail() -> void:
 	if empty_hint != null:
 		empty_hint.text = "エージェント詳細"
 
+	# パネル内は libido/怒り追加で縦に伸びたので ScrollContainer で巻く。
+	var scroll := ScrollContainer.new()
+	scroll.name = "DetailScroll"
+	scroll.offset_left = 16
+	scroll.offset_top = 44
+	scroll.offset_right = 260
+	scroll.offset_bottom = 420
+	scroll.custom_minimum_size = Vector2(244, 376)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(scroll)
+
 	var content := VBoxContainer.new()
 	content.name = "DetailContent"
-	content.offset_left = 16
-	content.offset_top = 44
-	content.offset_right = 252
-	content.offset_bottom = 420
-	content.custom_minimum_size = Vector2(236, 376)
+	content.custom_minimum_size = Vector2(228, 0)
 	content.add_theme_constant_override("separation", 6)
-	panel.add_child(content)
+	scroll.add_child(content)
 
 	var color: Color = a.badge_color()
 	var hex := "#%02X%02X%02X" % [int(color.r * 255), int(color.g * 255), int(color.b * 255)]
