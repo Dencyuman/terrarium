@@ -13,7 +13,7 @@ var world: World
 var agents: Array = []
 var resources: ResourceField
 var scheduler: Scheduler
-var ollama: OllamaClient
+var ollama: LLMClient   # 歴史的名前。Ollama / Anthropic のどちらかが入る。
 var run_logger: RunLogger
 
 var current_tab: int = 0
@@ -50,9 +50,15 @@ func _ready() -> void:
 	world_size = int(config["world"]["size"])
 	tick_per_day = int(config["world"].get("tick_per_day", 10))
 
-	ollama = OllamaClient.new()
+	var provider: String = str(config["llm"].get("provider", "ollama")).to_lower()
+	match provider:
+		"anthropic":
+			ollama = AnthropicClient.new()
+		_:
+			ollama = OllamaClient.new()
 	add_child(ollama)
 	ollama.configure(config["llm"])
+	print("[LLM] provider=%s" % provider)
 	ollama.health_changed.connect(_on_health_changed)
 	ollama.batch_progress.connect(_on_decide_progress)
 	ollama.agent_decided.connect(_on_agent_decided_incremental)
@@ -81,7 +87,7 @@ func _ready() -> void:
 	if conn_label != null:
 		conn_label.mouse_filter = Control.MOUSE_FILTER_STOP
 		conn_label.gui_input.connect(_on_connection_label_clicked)
-		conn_label.tooltip_text = "クリックで Ollama への接続を再試行"
+		conn_label.tooltip_text = "クリックで LLM プロバイダへの接続を再試行"
 
 func _initialize_simulation(names_data: Dictionary) -> void:
 	world = World.new(world_size, world_seed)
@@ -622,20 +628,36 @@ func _on_health_changed(status: String) -> void:
 	var conn_label := get_node_or_null(^"UI/FooterBar/ConnectionStatus") as Label
 	if conn_label == null:
 		return
+	var provider_label: String = _provider_display_name()
+	var target: String = _provider_target_display()
 	var prefix: String
 	var color: Color
 	match status:
 		"ok":
-			prefix = "●  接続 Ollama"
+			prefix = "●  接続 %s" % provider_label
 			color = Color(0.431, 0.855, 0.541, 1)
 		"error":
-			prefix = "✕  接続失敗 Ollama"
+			prefix = "✕  接続失敗 %s" % provider_label
 			color = Color(0.88, 0.44, 0.44, 1)
 		_:
-			prefix = "○  確認中 Ollama"
+			prefix = "○  確認中 %s" % provider_label
 			color = Color(0.88, 0.72, 0.38, 1)
-	conn_label.text = "%s  %s" % [prefix, _strip_scheme(config["llm"]["endpoint"])]
+	conn_label.text = "%s  %s" % [prefix, target]
 	conn_label.modulate = color
+
+func _provider_display_name() -> String:
+	var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
+	match p:
+		"anthropic": return "Anthropic"
+		_: return "Ollama"
+
+func _provider_target_display() -> String:
+	var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
+	match p:
+		"anthropic":
+			return str(config["llm"].get("anthropic_model", "claude-haiku-4-5"))
+		_:
+			return _strip_scheme(str(config["llm"].get("endpoint", "")))
 
 # --- UI refresh ---
 
@@ -951,12 +973,21 @@ func _populate_ui(cfg: Dictionary) -> void:
 
 	var model_label := get_node_or_null(^"UI/FooterBar/ModelStatus") as Label
 	if model_label != null:
-		var thinking := "ON" if bool(cfg["llm"]["thinking_mode"]) else "OFF"
-		model_label.text = "●  モデル  %s  (thinking: %s)" % [cfg["llm"]["model"], thinking]
+		var p: String = str(cfg["llm"].get("provider", "ollama")).to_lower()
+		var model_name: String
+		var suffix: String
+		if p == "anthropic":
+			model_name = str(cfg["llm"].get("anthropic_model", ""))
+			suffix = ""
+		else:
+			model_name = str(cfg["llm"].get("model", ""))
+			var thinking := "ON" if bool(cfg["llm"].get("thinking_mode", false)) else "OFF"
+			suffix = "  (thinking: %s)" % thinking
+		model_label.text = "●  モデル  %s%s" % [model_name, suffix]
 
 	var conn_label := get_node_or_null(^"UI/FooterBar/ConnectionStatus") as Label
 	if conn_label != null:
-		conn_label.text = "○  確認中 Ollama  %s" % _strip_scheme(cfg["llm"]["endpoint"])
+		conn_label.text = "○  確認中 %s  %s" % [_provider_display_name(), _provider_target_display()]
 
 func _format_agent_list() -> String:
 	var lines: Array = []

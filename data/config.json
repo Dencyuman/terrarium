@@ -1,12 +1,17 @@
 {
   "_comment": "Terrarium v0.1 既定設定。個別の上書きは data/config.local.json(gitignore 済み)で行う。",
   "llm": {
+    "_comment": "provider: \"ollama\" | \"anthropic\"。Anthropic 使用時は anthropic_api_key を config.local.json に書く。",
+    "provider": "ollama",
     "endpoint": "http://localhost:11434",
     "model": "gemma4:e4b",
     "temperature": 0.6,
     "timeout_sec": 30,
     "parallel": 4,
-    "thinking_mode": false
+    "thinking_mode": false,
+    "anthropic_model": "claude-haiku-4-5-20251001",
+    "anthropic_max_tokens": 800,
+    "anthropic_api_key": ""
   },
   "world": {
     "size": 20,
