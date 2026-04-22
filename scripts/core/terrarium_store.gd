@@ -114,6 +114,87 @@ func ensure_default_terrarium(config: Dictionary, names_data: Dictionary) -> int
 	current_terrarium_title = "default"
 	return current_terrarium_id
 
+# 全 terrarium を新しい順で返す。各行に run_count と is_editable (action イベント 0 件なら編集可) を付加。
+func list_terrariums() -> Array:
+	if db == null:
+		return []
+	db.query("""
+		SELECT
+			t.id, t.title, t.description, t.created_at,
+			t.world_size, t.world_seed, t.tick_per_day,
+			(SELECT COUNT(*) FROM runs r WHERE r.terrarium_id = t.id) AS run_count,
+			(SELECT COUNT(*) FROM events e JOIN runs r ON e.run_id = r.id
+			 WHERE r.terrarium_id = t.id AND e.type = 'action') AS action_count
+		FROM terrariums t
+		ORDER BY t.id DESC
+	""")
+	var out: Array = []
+	for row in db.query_result:
+		var is_editable: bool = int(row.get("action_count", 0)) == 0
+		row["is_editable"] = is_editable
+		out.append(row)
+	return out
+
+func get_terrarium(terrarium_id: int) -> Dictionary:
+	if db == null:
+		return {}
+	var rows: Array = db.select_rows("terrariums", "id = %d" % terrarium_id, ["*"])
+	if rows.is_empty():
+		return {}
+	return rows[0]
+
+func is_terrarium_editable(terrarium_id: int) -> bool:
+	if db == null:
+		return false
+	db.query("""
+		SELECT COUNT(*) AS c FROM events e
+		JOIN runs r ON e.run_id = r.id
+		WHERE r.terrarium_id = %d AND e.type = 'action'
+	""" % terrarium_id)
+	if db.query_result.is_empty():
+		return true
+	return int(db.query_result[0].get("c", 0)) == 0
+
+# new terrarium を挿入。title / world_size / world_seed / tick_per_day / cast_json / config_json を渡す。
+# terrain_json はオプション(空文字で seed 生成にフォールバック)。
+func create_terrarium(data: Dictionary) -> int:
+	if db == null:
+		return -1
+	db.insert_row("terrariums", {
+		"title": str(data.get("title", "untitled")),
+		"description": str(data.get("description", "")),
+		"created_at": _iso_now(),
+		"world_size": int(data.get("world_size", 20)),
+		"world_seed": int(data.get("world_seed", 0)),
+		"tick_per_day": int(data.get("tick_per_day", 10)),
+		"terrain_json": str(data.get("terrain_json", "")),
+		"cast_json": str(data.get("cast_json", "[]")),
+		"config_json": str(data.get("config_json", "{}")),
+	})
+	db.query("SELECT last_insert_rowid() AS id")
+	var res: Array = db.query_result
+	return int(res[0]["id"]) if res.size() > 0 else -1
+
+# 編集可能(action イベント 0 件)なら title / cast_json / config_json / world_seed 等を差し替える。
+# 動作済みテラリウムには適用しない。
+func update_terrarium(terrarium_id: int, data: Dictionary) -> bool:
+	if not is_terrarium_editable(terrarium_id):
+		return false
+	var fields: Dictionary = {}
+	for k in ["title", "description", "world_size", "world_seed", "tick_per_day", "terrain_json", "cast_json", "config_json"]:
+		if data.has(k):
+			fields[k] = data[k]
+	if fields.is_empty():
+		return true
+	db.update_rows("terrariums", "id = %d" % terrarium_id, fields)
+	return true
+
+func delete_terrarium(terrarium_id: int) -> bool:
+	if not is_terrarium_editable(terrarium_id):
+		return false
+	db.delete_rows("terrariums", "id = %d" % terrarium_id)
+	return true
+
 # --- runs ---
 
 func start_run(terrarium_id: int, provider: String, model: String) -> int:

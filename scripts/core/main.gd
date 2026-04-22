@@ -57,15 +57,31 @@ var ping_retry_timer: Timer
 var pending_decisions: Dictionary = {}
 
 func _ready() -> void:
-	config = _load_config()
-	var names_data: Dictionary = _load_json("res://data/names.json")
-
 	run_logger = TerrariumStore.new()
-	if run_logger.open():
-		var terrarium_id: int = run_logger.ensure_default_terrarium(config, names_data)
-		current_terrarium_id = terrarium_id
-	else:
+	if not run_logger.open():
 		push_error("TerrariumStore open failed; persistence disabled")
+
+	# GameContext 経由でテラリウム ID が渡されている場合は DB からロード。
+	# 直接 Main.tscn を起動した場合(TopPage を経由しない)は default terrarium にフォールバック。
+	var names_data: Dictionary
+	var selected_id: int = GameContext.selected_terrarium_id if GameContext else -1
+	if selected_id > 0 and run_logger != null:
+		var t_row: Dictionary = run_logger.get_terrarium(selected_id)
+		if not t_row.is_empty():
+			config = JSON.parse_string(str(t_row.get("config_json", "{}")))
+			if not (config is Dictionary):
+				config = _load_config()
+			var cast_raw = JSON.parse_string(str(t_row.get("cast_json", "[]")))
+			names_data = {"agents": cast_raw if cast_raw is Array else []}
+			run_logger.current_terrarium_id = selected_id
+			run_logger.current_terrarium_title = str(t_row.get("title", ""))
+			current_terrarium_id = selected_id
+	if config == null or config.is_empty():
+		# フォールバック経路: config.json + names.json 直読み + default terrarium 確保
+		config = _load_config()
+		names_data = _load_json("res://data/names.json")
+		if run_logger != null:
+			current_terrarium_id = run_logger.ensure_default_terrarium(config, names_data)
 
 	world_seed = int(config["world"]["seed"])
 	world_size = int(config["world"]["size"])
@@ -101,6 +117,10 @@ func _ready() -> void:
 	_populate_ui(config)
 	_select_tab(0)
 	_update_tick_ui()
+
+	var back_btn := get_node_or_null(^"UI/FooterBar/BackToTopBtn") as Button
+	if back_btn != null:
+		back_btn.pressed.connect(_on_back_to_top_pressed)
 
 	# バックグラウンド ping(結果は footer に反映)
 	_ping_ollama_async()
@@ -343,6 +363,14 @@ func _on_reset_pressed() -> void:
 	if run_logger != null and current_terrarium_id >= 0:
 		var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
 		run_logger.start_run(current_terrarium_id, p, _current_model_id())
+
+func _on_back_to_top_pressed() -> void:
+	running = false
+	_end_current_run()
+	if run_logger != null:
+		run_logger.close()
+	GameContext.selected_terrarium_id = -1
+	get_tree().change_scene_to_file("res://scenes/TopPage.tscn")
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:
