@@ -59,19 +59,19 @@ func _ready() -> void:
 	if not store.open():
 		push_error("[Editor] TerrariumStore open failed")
 
-	var save_btn := get_node_or_null(^"UI/Scroll/Inner/SaveBtn") as Button
-	var back_btn := get_node_or_null(^"UI/Scroll/Inner/BackBtn") as Button
-	var add_btn := get_node_or_null(^"UI/Scroll/Inner/CastPanel/AddCastBtn") as Button
-	var rnd_btn := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedRandomBtn") as Button
+	var save_btn := get_node_or_null(^"UI/SaveBtn") as Button
+	var back_btn := get_node_or_null(^"UI/BackBtn") as Button
+	var add_btn := get_node_or_null(^"UI/CastPanel/AddCastBtn") as Button
+	var rnd_btn := get_node_or_null(^"UI/MetaPanel/SeedRandomBtn") as Button
 	if save_btn != null: save_btn.pressed.connect(_on_save_pressed)
 	if back_btn != null: back_btn.pressed.connect(_on_back_pressed)
 	if add_btn != null:  add_btn.pressed.connect(_on_add_cast_pressed)
 	if rnd_btn != null:  rnd_btn.pressed.connect(_on_random_seed_pressed)
 
-	_map_canvas = get_node_or_null(^"UI/Scroll/Inner/MapPanel/MapCanvas")
+	_map_canvas = get_node_or_null(^"UI/MapPanel/MapCanvas")
 	_wire_palette()
 	_wire_fill_row()
-	var size_field := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SizeField") as SpinBox
+	var size_field := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
 	if size_field != null:
 		size_field.value_changed.connect(_on_size_changed)
 	_build_env_panel()
@@ -99,12 +99,12 @@ func _load_existing(id: int) -> void:
 		_load_template()
 		return
 	editable = store.is_terrarium_editable(id)
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TitleField") as LineEdit).text = str(row.get("title", ""))
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/DescField") as LineEdit).text = str(row.get("description", ""))
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox).value = float(int(row.get("world_seed", 0)))
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TickPerDayField") as SpinBox).value = float(int(row.get("tick_per_day", 10)))
+	(get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text = str(row.get("title", ""))
+	(get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text = str(row.get("description", ""))
+	(get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value = float(int(row.get("world_seed", 0)))
+	(get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value = float(int(row.get("tick_per_day", 10)))
 	var size_loaded: int = clampi(int(row.get("world_size", 20)), 3, 20)
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SizeField") as SpinBox).value = float(size_loaded)
+	(get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox).value = float(size_loaded)
 	if _map_canvas != null:
 		_map_canvas.set_grid_size(size_loaded)
 	var cfg = JSON.parse_string(str(row.get("config_json", "{}")))
@@ -141,14 +141,14 @@ func _load_template() -> void:
 		var parsed2 = JSON.parse_string(txt2)
 		if parsed2 is Dictionary and parsed2.has("agents"):
 			cast_data = parsed2["agents"]
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TitleField") as LineEdit).text = "new terrarium"
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/DescField") as LineEdit).text = ""
-	var seed_field := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox
+	(get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text = "new terrarium"
+	(get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text = ""
+	var seed_field := get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox
 	if seed_field != null:
 		seed_field.value = float(int(base_config.get("world", {}).get("seed", randi())))
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TickPerDayField") as SpinBox).value = float(int(base_config.get("world", {}).get("tick_per_day", 10)))
+	(get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value = float(int(base_config.get("world", {}).get("tick_per_day", 10)))
 	var template_size: int = clampi(int(base_config.get("world", {}).get("size", 20)), 3, 20)
-	(get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SizeField") as SpinBox).value = float(template_size)
+	(get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox).value = float(template_size)
 	if _map_canvas != null:
 		_map_canvas.set_grid_size(template_size)
 	_refresh_env_panel_values()
@@ -157,32 +157,36 @@ func _load_template() -> void:
 func _apply_readonly_if_needed() -> void:
 	if editable:
 		return
-	var badge := get_node_or_null(^"UI/Scroll/Inner/ReadOnlyBadge") as Label
+	var badge := get_node_or_null(^"UI/ReadOnlyBadge") as Label
 	if badge != null: badge.visible = true
-	var save_btn := get_node_or_null(^"UI/Scroll/Inner/SaveBtn") as Button
+	var save_btn := get_node_or_null(^"UI/SaveBtn") as Button
 	if save_btn != null: save_btn.visible = false
-	var add_btn := get_node_or_null(^"UI/Scroll/Inner/CastPanel/AddCastBtn") as Button
+	var add_btn := get_node_or_null(^"UI/CastPanel/AddCastBtn") as Button
 	if add_btn != null: add_btn.disabled = true
-	var title_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TitleField") as LineEdit
-	var desc_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/DescField") as LineEdit
-	var seed_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox
-	var tpd_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TickPerDayField") as SpinBox
-	var rnd_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedRandomBtn") as Button
+	var title_f := get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit
+	var desc_f := get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit
+	var seed_f := get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox
+	var tpd_f := get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox
+	var rnd_f := get_node_or_null(^"UI/MetaPanel/SeedRandomBtn") as Button
 	if title_f != null: title_f.editable = false
 	if desc_f  != null: desc_f.editable = false
 	if seed_f  != null: seed_f.editable = false
 	if tpd_f   != null: tpd_f.editable = false
 	if rnd_f   != null: rnd_f.disabled = true
-	var size_f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SizeField") as SpinBox
+	var size_f := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
 	if size_f != null: size_f.editable = false
+	# 環境パラメータの SpinBox 群も disable(_build_env_panel 時は editable=true で生成されるので後追いで止める)
+	for key in _env_fields.keys():
+		var spin: SpinBox = _env_fields[key]
+		if spin != null: spin.editable = false
 	# map canvas も入力停止、パレット / fill ボタン群も disabled
 	if _map_canvas != null:
 		_map_canvas.set_enabled(false)
 	for btn_name in ["Grass", "Water", "Forest", "Rock"]:
-		var b := get_node_or_null("UI/Scroll/Inner/MapPanel/Palette/" + btn_name) as Button
+		var b := get_node_or_null("UI/MapPanel/Palette/" + btn_name) as Button
 		if b != null: b.disabled = true
 	for btn_name in ["FillGrass", "FillWater", "GenFromSeed", "ClearMap"]:
-		var b := get_node_or_null("UI/Scroll/Inner/MapPanel/FillRow/" + btn_name) as Button
+		var b := get_node_or_null("UI/MapPanel/FillRow/" + btn_name) as Button
 		if b != null: b.disabled = true
 
 # --- map paint wiring ---
@@ -190,7 +194,7 @@ func _apply_readonly_if_needed() -> void:
 func _wire_palette() -> void:
 	var names := ["Grass", "Water", "Forest", "Rock"]
 	for i in range(names.size()):
-		var btn := get_node_or_null("UI/Scroll/Inner/MapPanel/Palette/" + names[i]) as Button
+		var btn := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
 		if btn == null:
 			continue
 		btn.pressed.connect(_on_palette_pressed.bind(i, names))
@@ -200,14 +204,14 @@ func _on_palette_pressed(idx: int, names: Array) -> void:
 		_map_canvas.set_brush(idx)
 	# トグルグループ的に選択表示(他を外す)
 	for i in range(names.size()):
-		var b := get_node_or_null("UI/Scroll/Inner/MapPanel/Palette/" + names[i]) as Button
+		var b := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
 		if b != null:
 			b.button_pressed = (i == idx)
 	_update_terrain_info(idx)
 
 # 選択中のタイルの性質を自然な日本語で説明する。config 値を読んで具体数値を示す。
 func _update_terrain_info(idx: int) -> void:
-	var info := get_node_or_null(^"UI/Scroll/Inner/MapPanel/TerrainInfo") as Label
+	var info := get_node_or_null(^"UI/MapPanel/TerrainInfo") as Label
 	if info == null:
 		return
 	var spawn_grass: float = float(_get_nested(base_config, ["resources", "initial_spawn", "grass"], 0.06))
@@ -229,10 +233,10 @@ func _update_terrain_info(idx: int) -> void:
 			info.text = ""
 
 func _wire_fill_row() -> void:
-	var g := get_node_or_null(^"UI/Scroll/Inner/MapPanel/FillRow/FillGrass") as Button
-	var w := get_node_or_null(^"UI/Scroll/Inner/MapPanel/FillRow/FillWater") as Button
-	var s := get_node_or_null(^"UI/Scroll/Inner/MapPanel/FillRow/GenFromSeed") as Button
-	var c := get_node_or_null(^"UI/Scroll/Inner/MapPanel/FillRow/ClearMap") as Button
+	var g := get_node_or_null(^"UI/MapPanel/FillRow/FillGrass") as Button
+	var w := get_node_or_null(^"UI/MapPanel/FillRow/FillWater") as Button
+	var s := get_node_or_null(^"UI/MapPanel/FillRow/GenFromSeed") as Button
+	var c := get_node_or_null(^"UI/MapPanel/FillRow/ClearMap") as Button
 	if g != null: g.pressed.connect(func():
 		_map_canvas.fill_all(0)
 		has_custom_terrain = true
@@ -250,7 +254,7 @@ func _wire_fill_row() -> void:
 # 現在の seed / size を使って Perlin ベースで地形を生成してキャンバスに表示する。
 # これを押した時点で has_custom_terrain = true(変更されたものとして保存される)。
 func _on_gen_from_seed_pressed() -> void:
-	var seed_v := int((get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox).value)
+	var seed_v := int((get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value)
 	var w := World.new(20, seed_v)
 	_map_canvas.set_terrain(w.terrain.duplicate(true))
 	has_custom_terrain = true
@@ -265,7 +269,7 @@ func _build_env_panel() -> void:
 	_build_terrain_tab()
 
 func _build_common_tab() -> void:
-	var grid := get_node_or_null(^"UI/Scroll/Inner/EnvPanel/Tabs/共通/CommonScroll/CommonGrid") as GridContainer
+	var grid := get_node_or_null(^"UI/EnvPanel/Tabs/共通/CommonScroll/CommonGrid") as GridContainer
 	if grid == null:
 		return
 	for child in grid.get_children():
@@ -304,7 +308,7 @@ func _build_common_tab() -> void:
 		grid.add_child(hint_lbl)
 
 func _build_terrain_tab() -> void:
-	var grid := get_node_or_null(^"UI/Scroll/Inner/EnvPanel/Tabs/地形別/TerrainScroll/TerrainGrid") as GridContainer
+	var grid := get_node_or_null(^"UI/EnvPanel/Tabs/地形別/TerrainScroll/TerrainGrid") as GridContainer
 	if grid == null:
 		return
 	for child in grid.get_children():
@@ -387,7 +391,7 @@ func _make_env_spin(path: Array, minv: float, maxv: float, step: float, w: int =
 func _current_palette_idx() -> int:
 	var names := ["Grass", "Water", "Forest", "Rock"]
 	for i in range(names.size()):
-		var b := get_node_or_null("UI/Scroll/Inner/MapPanel/Palette/" + names[i]) as Button
+		var b := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
 		if b != null and b.button_pressed:
 			return i
 	return -1
@@ -428,7 +432,7 @@ func _on_size_changed(v: float) -> void:
 	_update_constraint_label()
 
 func _current_size() -> int:
-	var f := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SizeField") as SpinBox
+	var f := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
 	return int(f.value) if f != null else 20
 
 func _constraint_ok(n_size: int, n_cast: int) -> bool:
@@ -441,7 +445,7 @@ func _constraint_ok(n_size: int, n_cast: int) -> bool:
 	return (n_size * n_size) >= (n_cast * 4)
 
 func _update_constraint_label() -> void:
-	var lbl := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/ConstraintLabel") as Label
+	var lbl := get_node_or_null(^"UI/MetaPanel/ConstraintLabel") as Label
 	if lbl == null:
 		return
 	var n_size: int = _current_size()
@@ -465,14 +469,14 @@ func _update_constraint_label() -> void:
 		lbl.text = "制約 NG: %s" % reason
 		lbl.add_theme_color_override("font_color", Color(0.88, 0.44, 0.44, 1))
 	# 保存可否も同期
-	var save_btn := get_node_or_null(^"UI/Scroll/Inner/SaveBtn") as Button
+	var save_btn := get_node_or_null(^"UI/SaveBtn") as Button
 	if save_btn != null and editable:
 		save_btn.disabled = not ok
 
 # --- cast UI ---
 
 func _rebuild_cast_list() -> void:
-	var list := get_node_or_null(^"UI/Scroll/Inner/CastPanel/CastScroll/CastList") as VBoxContainer
+	var list := get_node_or_null(^"UI/CastPanel/CastScroll/CastList") as VBoxContainer
 	if list == null:
 		return
 	for c in list.get_children():
@@ -611,7 +615,7 @@ func _on_add_cast_pressed() -> void:
 	_update_constraint_label()
 
 func _flash_constraint(msg: String) -> void:
-	var lbl := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/ConstraintLabel") as Label
+	var lbl := get_node_or_null(^"UI/MetaPanel/ConstraintLabel") as Label
 	if lbl == null:
 		return
 	lbl.text = "制約 NG: %s" % msg
@@ -627,12 +631,12 @@ func _on_save_pressed() -> void:
 	if not _constraint_ok(n_size, n_cast):
 		_update_constraint_label()
 		return
-	var title := (get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TitleField") as LineEdit).text.strip_edges()
+	var title := (get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text.strip_edges()
 	if title == "":
 		title = "untitled"
-	var desc := (get_node_or_null(^"UI/Scroll/Inner/MetaPanel/DescField") as LineEdit).text
-	var seed_v := int((get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox).value)
-	var tpd := int((get_node_or_null(^"UI/Scroll/Inner/MetaPanel/TickPerDayField") as SpinBox).value)
+	var desc := (get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text
+	var seed_v := int((get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value)
+	var tpd := int((get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value)
 	# base_config の world セクションを上書き
 	if not base_config.has("world"):
 		base_config["world"] = {}
@@ -668,7 +672,7 @@ func _on_back_pressed() -> void:
 	_goto_top()
 
 func _on_random_seed_pressed() -> void:
-	var seed_field := get_node_or_null(^"UI/Scroll/Inner/MetaPanel/SeedField") as SpinBox
+	var seed_field := get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox
 	if seed_field != null:
 		seed_field.value = float(randi())
 
