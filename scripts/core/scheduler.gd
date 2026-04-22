@@ -69,6 +69,9 @@ var embrace_stamina_gift: int = 3
 var speak_stamina: int = 2
 var wait_stamina_restore: int = 10
 var look_stamina: int = 2
+# Phase 5 加齢 / 老衰
+var elder_age_days: int = 6      # この日数以上で老衰による health drain が始まる
+var elder_health_drain: int = 2  # 老衰時の 1 tick あたり health 減少
 
 # 関係性の更新量(config.json の relations セクションで上書き可能)
 var rel_affection_per_give: int = 10
@@ -111,6 +114,8 @@ func configure_costs(cfg: Dictionary) -> void:
 	speak_stamina = int(cfg.get("speak_stamina", speak_stamina))
 	wait_stamina_restore = int(cfg.get("wait_stamina_restore", wait_stamina_restore))
 	look_stamina = int(cfg.get("look_stamina", look_stamina))
+	elder_age_days = int(cfg.get("elder_age_days", elder_age_days))
+	elder_health_drain = int(cfg.get("elder_health_drain", elder_health_drain))
 
 func configure_relations(cfg: Dictionary) -> void:
 	rel_affection_per_give = int(cfg.get("affection_per_give", rel_affection_per_give))
@@ -228,9 +233,11 @@ func apply_bundle_for_agent(agent: Agent, bundle: Array) -> void:
 	while agent.own_history.size() > 5:
 		agent.own_history.pop_front()
 	var pre_health: int = agent.health
-	agent.apply_tick_decay(tick_base_hunger, starving_health_drain)
+	agent.apply_tick_decay(tick_base_hunger, starving_health_drain, elder_age_days, elder_health_drain)
 	if pre_health > 0 and agent.health <= 0:
-		_emit_death(agent, "starvation", null)
+		# 死因の分離: 空腹 0 なら餓死、そうでなければ老衰
+		var cause: String = "starvation" if agent.hunger == 0 else "old_age"
+		_emit_death(agent, cause, null)
 
 func finalize_tick() -> void:
 	# tick 境界で resource 再生と day 進行を処理。LLM 経路で apply_bundle_for_agent を
@@ -239,6 +246,10 @@ func finalize_tick() -> void:
 	tick += 1
 	if tick_per_day > 0 and tick % tick_per_day == 0:
 		day += 1
+		# 日付が進んだら生存中の agent 全員を 1 歳ずつ加齢させる
+		for a in agents:
+			if a.is_alive():
+				a.age_days += 1
 	phase = Phase.IDLE
 	phase_changed.emit("Idle")
 	tick_completed.emit(tick)
@@ -467,6 +478,8 @@ func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
 		text = "%s が %s に攻撃されて倒れた" % [victim.agent_name, killer.agent_name]
 	elif cause == "starvation":
 		text = "%s が餓死した" % victim.agent_name
+	elif cause == "old_age":
+		text = "%s が老衰で倒れた (age %d)" % [victim.agent_name, victim.age_days]
 	else:
 		text = "%s が倒れた" % victim.agent_name
 	_emit_event({
@@ -500,6 +513,8 @@ func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
 			life_text = "%s が %s に殺されるのを見た" % [victim.agent_name, killer.agent_name]
 		elif cause == "starvation":
 			life_text = "%s が餓死するのを見た" % victim.agent_name
+		elif cause == "old_age":
+			life_text = "%s が老衰で亡くなるのを見届けた" % victim.agent_name
 		else:
 			life_text = "%s が倒れるのを見た" % victim.agent_name
 		witness.append_life_event(tick, life_text)

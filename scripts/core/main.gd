@@ -455,6 +455,8 @@ func _serialize_agent(a: Agent) -> Dictionary:
 		"own_history": a.own_history.duplicate(),
 		"life_events": a.life_events.duplicate(),
 		"scouted_tiles": a.scouted_tiles.duplicate(true),
+		"age_days": a.age_days,
+		"parent_ids": a.parent_ids.duplicate(),
 	}
 
 func _apply_state_snapshot(snap: Dictionary) -> void:
@@ -527,6 +529,12 @@ func _deserialize_agent_state(a: Agent, dump: Dictionary) -> void:
 	if sc is Array:
 		for e in sc:
 			if e is Dictionary: a.scouted_tiles.append(e.duplicate(true))
+	a.age_days = int(dump.get("age_days", a.age_days))
+	var parents = dump.get("parent_ids", [])
+	a.parent_ids = []
+	if parents is Array:
+		for p in parents:
+			a.parent_ids.append(int(p))
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:
@@ -1155,6 +1163,9 @@ func _spawn_agents(defs: Array, w: World, seed_: int) -> Array:
 	var hunger_range: Array = agents_cfg.get("initial_hunger_range", [80, 80])
 	var hunger_min: int = int(hunger_range[0])
 	var hunger_max: int = int(hunger_range[1] if hunger_range.size() > 1 else hunger_range[0])
+	var age_range: Array = agents_cfg.get("initial_age_range", [2, 4])
+	var age_min: int = int(age_range[0])
+	var age_max: int = int(age_range[1] if age_range.size() > 1 else age_range[0])
 	var stamina_initial: int = int(costs_cfg.get("stamina_initial", Agent.STAMINA_INITIAL))
 	var out: Array = []
 	var placed: Dictionary = {}
@@ -1174,6 +1185,11 @@ func _spawn_agents(defs: Array, w: World, seed_: int) -> Array:
 			a.hunger = rng.randi_range(hunger_min, hunger_max)
 		else:
 			a.hunger = hunger_min
+		# 初期 age_days を range 内でランダム化(世代交代観察のため若者と中年が混在)
+		if age_min < age_max:
+			a.age_days = rng.randi_range(age_min, age_max)
+		else:
+			a.age_days = age_min
 		a.grid_pos = _pick_spawn(w, rng, placed)
 		placed[a.grid_pos] = true
 		out.append(a)
@@ -1279,7 +1295,7 @@ func _format_agent_list() -> String:
 		var row: String
 		if a.is_alive():
 			row = "[color=%s]■[/color]  [b]%s[/b]  [color=%s]%s[/color] [color=#8a8680]age %d · hp %d hg %d st %d[/color]" % [
-				hex, a.agent_name, gender_color, sym, 20 + (a.id % 10), a.health, a.hunger, a.stamina,
+				hex, a.agent_name, gender_color, sym, a.age_days, a.health, a.hunger, a.stamina,
 			]
 		else:
 			# 死者: grey + 取り消し線風、meta クリックは残す(関係性参照のため)
@@ -1379,11 +1395,11 @@ func _update_agent_detail() -> void:
 	head.add_theme_font_size_override("normal_font_size", 13)
 	if is_dead:
 		head.text = "[color=%s]✕[/color]  [s][b][color=%s]%s[/color][/b][/s]  [color=%s]%s[/color]  [color=%s]享年 %d  (故人)[/color]" % [
-			name_hex, label_primary, a.agent_name, text_dim, sym, text_dim, 20 + (a.id % 10),
+			name_hex, label_primary, a.agent_name, text_dim, sym, text_dim, a.age_days,
 		]
 	else:
 		head.text = "[color=%s]●[/color]  [b]%s[/b]  %s  [color=#8a8680]Age %d  G1[/color]" % [
-			hex, a.agent_name, sym, 20 + (a.id % 10),
+			hex, a.agent_name, sym, a.age_days,
 		]
 	content.add_child(head)
 

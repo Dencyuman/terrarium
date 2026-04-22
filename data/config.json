@@ -25,7 +25,8 @@
   "agents": {
     "initial_count": 20,
     "inventory_capacity": 3,
-    "initial_hunger_range": [30, 85]
+    "initial_hunger_range": [30, 85],
+    "initial_age_range": [2, 4]
   },
   "costs": {
     "_comment": "hunger は tick 基礎代謝 + 各アクションの追加コスト、health は飢餓ダメージ / attack ダメージ、stamina は活動コスト / wait で回復。",
@@ -48,7 +49,9 @@
     "embrace_stamina_gift": 3,
     "speak_stamina": 2,
     "wait_stamina_restore": 10,
-    "look_stamina": 2
+    "look_stamina": 2,
+    "elder_age_days": 6,
+    "elder_health_drain": 2
   },
   "resources": {
     "_comment": "食料スポーン率(確率、地形別)。grass/forest のみ食料が出る。",

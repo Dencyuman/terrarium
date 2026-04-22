@@ -25,6 +25,8 @@ const COMMON_SPECS := [
 	[["costs", "tick_base_hunger"],          "1tick ごとに減る満腹度(基礎代謝)",   "大きいほど過酷", 0.0, 10.0, 1.0],
 	[["costs", "starving_health_drain"],     "空腹時の体力減少(1tickあたり)",      "大きいほど過酷", 0.0, 50.0, 1.0],
 	[["costs", "attack_health_damage"],      "攻撃1回のダメージ",                  "大きいほど過酷", 0.0, 100.0, 1.0],
+	[["costs", "elder_age_days"],            "老衰が始まる年齢(日)",               "大きいほど長寿", 1.0, 100.0, 1.0],
+	[["costs", "elder_health_drain"],        "老衰時の体力減少(1tickあたり)",      "大きいほど短命", 0.0, 20.0, 1.0],
 ]
 
 # 「地形別」タブ用の 1 行定義。各地形がどの field を持つかは違うので spec は地形ごと。

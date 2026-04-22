@@ -21,6 +21,10 @@ var grid_pos: Vector2i = Vector2i.ZERO
 var hunger: int = HUNGER_INITIAL
 var health: int = HEALTH_INITIAL
 var stamina: int = STAMINA_INITIAL
+# 加齢(日単位)。Phase 5 で導入。tick ではなく day 境界でインクリメントされる。
+var age_days: int = 0
+# 親系譜(Phase 5 の reproduce_with で設定される)
+var parent_ids: Array[int] = []
 
 # 所持品(v0.1 は食料のみ扱う。文字列 "food" をスロット占有の単位とする)
 var inventory: Array[String] = []
@@ -53,10 +57,13 @@ func _init(id_: int = 0) -> void:
 func is_alive() -> bool:
 	return health > 0
 
-func apply_tick_decay(base_cost: int = 1, starving_drain: int = 2) -> void:
+func apply_tick_decay(base_cost: int = 1, starving_drain: int = 2, elder_age_days: int = 6, elder_drain: int = 2) -> void:
 	hunger = max(0, hunger - base_cost)
 	if hunger == 0:
 		health = max(0, health - starving_drain)
+	# 老衰: age_days >= elder_age_days なら毎 tick さらに health が削れる
+	if age_days >= elder_age_days:
+		health = max(0, health - elder_drain)
 
 func eat_amount(amount: int) -> void:
 	hunger = min(HUNGER_MAX, hunger + amount)
