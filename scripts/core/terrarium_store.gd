@@ -89,6 +89,15 @@ func _ensure_schema() -> void:
 	db.query("CREATE INDEX IF NOT EXISTS idx_events_run_tick ON events(run_id, tick)")
 	db.query("CREATE INDEX IF NOT EXISTS idx_events_agent ON events(run_id, agent_id)")
 	db.query("CREATE INDEX IF NOT EXISTS idx_events_type ON events(run_id, type)")
+	db.query("""
+		CREATE TABLE IF NOT EXISTS run_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_id INTEGER NOT NULL,
+			tick INTEGER NOT NULL,
+			state_json TEXT NOT NULL
+		)
+	""")
+	db.query("CREATE INDEX IF NOT EXISTS idx_snapshots_run_tick ON run_snapshots(run_id, tick)")
 
 # --- terrariums ---
 
@@ -297,6 +306,40 @@ func save_state(state: Dictionary) -> void:
 	db.update_rows("runs", "id = %d" % current_run_id, {
 		"state_json": JSON.stringify(state),
 	})
+
+func save_tick_snapshot(tick: int, state: Dictionary) -> void:
+	# tick 境界ごとのビジュアルリプレイ用ヒストリカルスナップショット。
+	# 既に同じ (run_id, tick) があれば上書きする。
+	if current_run_id < 0 or db == null:
+		return
+	var where := "run_id = %d AND tick = %d" % [current_run_id, tick]
+	db.delete_rows("run_snapshots", where)
+	db.insert_row("run_snapshots", {
+		"run_id": current_run_id,
+		"tick": tick,
+		"state_json": JSON.stringify(state),
+	})
+
+func list_snapshot_ticks(run_id: int) -> Array:
+	if db == null:
+		return []
+	db.query("SELECT DISTINCT tick FROM run_snapshots WHERE run_id = %d ORDER BY tick ASC" % run_id)
+	var out: Array = []
+	for row in db.query_result:
+		out.append(int(row["tick"]))
+	return out
+
+func load_tick_snapshot(run_id: int, tick: int) -> Dictionary:
+	if db == null:
+		return {}
+	var rows: Array = db.select_rows("run_snapshots", "run_id = %d AND tick = %d" % [run_id, tick], ["state_json"])
+	if rows.is_empty():
+		return {}
+	var s: String = str(rows[0].get("state_json", ""))
+	if s == "":
+		return {}
+	var parsed = JSON.parse_string(s)
+	return parsed if parsed is Dictionary else {}
 
 func load_state(run_id: int) -> Dictionary:
 	if db == null:

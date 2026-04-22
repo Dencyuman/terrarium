@@ -77,6 +77,14 @@ func _make_run_row(row: Dictionary) -> Control:
 		badge.size = Vector2(32, 16)
 		card.add_child(badge)
 
+	var map_btn := Button.new()
+	map_btn.text = "🎬"
+	map_btn.tooltip_text = "マップ再生"
+	map_btn.position = Vector2(1220, 8)
+	map_btn.size = Vector2(30, 28)
+	map_btn.pressed.connect(_on_map_pressed.bind(run_id))
+	card.add_child(map_btn)
+
 	var btn := Button.new()
 	btn.text = "詳細"
 	btn.position = Vector2(1254, 8)
@@ -104,6 +112,10 @@ func _short_time(iso: String) -> String:
 func _on_detail_pressed(run_id: int) -> void:
 	GameContext.selected_run_id = run_id
 	get_tree().change_scene_to_file("res://scenes/RunTimeline.tscn")
+
+func _on_map_pressed(run_id: int) -> void:
+	GameContext.selected_run_id = run_id
+	get_tree().change_scene_to_file("res://scenes/RunReplay.tscn")
 
 func _on_back_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/TopPage.tscn")
