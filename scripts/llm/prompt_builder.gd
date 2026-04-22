@@ -28,11 +28,11 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - "give": transfer one food item from your inventory to any agent within your vision (up to 3 tiles away in any direction — handed close-up or tossed). field `target`: the name of that agent. Fails silently if target is out of vision, you have nothing to give, or target's inventory is full.
 - "attack": strike an orthogonally adjacent agent. Their health decreases. field `target`.
 - "embrace": come into close contact with an orthogonally adjacent agent. No hunger/health effect, but physical touch alters your mutual relation. field `target`.
-- "speak": produce an utterance in Japanese colloquial (日本語口語体, one short sentence). field `text`. field `target`:
-    - a single name string → addressed to one agent
-    - an array of names → addressed to multiple agents at once
-    - omitted → no one in particular (announcement / muttering to yourself)
-  All living agents within your vision radius hear the words regardless of `target`. But `target` is the *physical act of attribution*: the harness only updates the named agent(s)' `affection` and `trust` toward you from this utterance. Unaddressed speech leaves no relational trace — words heard but not tied to anyone. If you are speaking *to* someone (calling their name, asking them, threatening them, comforting them), set `target`; otherwise the harness records your words as uncommitted.
+- "speak": produce an utterance in Japanese colloquial (日本語口語体, one short sentence). field `text`. Addressee is chosen by exactly one of:
+    - `target`: a single name string → addressed to one agent
+    - `targets`: an array of names → addressed to multiple agents at once
+    - omit both → no one in particular (announcement / muttering to yourself)
+  All living agents within your vision radius hear the words regardless. But naming an addressee (via `target` or `targets`) is the *physical act of attribution*: the harness only updates the named agent(s)' `affection` and `trust` toward you from this utterance. Unaddressed speech leaves no relational trace — words heard but not tied to anyone. If you are speaking *to* someone (calling their name, asking them, threatening them, comforting them), set an addressee; otherwise the harness records your words as uncommitted.
 - "look": gaze into the distance in one cardinal direction. field `direction`: "north" / "south" / "east" / "west" (diagonals are auto-snapped to the nearest cardinal). You peer in a strip **5 tiles deep × 3 tiles wide** centered on your line of sight. Every tile in that strip is remembered in your `scouted_tiles` memory (terrain type, food present, agent/corpse present) along with the tick when you looked. `look` costs stamina but lets you perceive beyond the default vision radius. The memory is a snapshot: if you look east at tick 10 and see food at (15,5), someone else may consume it by tick 15 — your memory still shows it until you look again. No hunger cost.
 - "wait": do nothing.
 
@@ -102,7 +102,8 @@ static func tool_schema_flat() -> Dictionary:
 				"north", "south", "east", "west",
 				"northeast", "northwest", "southeast", "southwest"
 			], "description": "Required for move and look. For take, optional (omit = own tile). look accepts only cardinal directions (NSEW); diagonals will be snapped."},
-			"target": {"type": "string", "description": "Agent name. Required for give/attack/embrace. Optional for speak."},
+			"target": {"type": "string", "description": "Agent name. Required for give/attack/embrace. Optional for speak (single addressee)."},
+			"targets": {"type": "array", "items": {"type": "string"}, "description": "For speak addressed to multiple agents at once. Use this instead of `target` when naming more than one addressee."},
 			"text": {"type": "string", "description": "Speech content (Japanese colloquial). Required for speak."}
 		},
 		"required": ["kind"]
@@ -185,7 +186,8 @@ static func tool_schema() -> Dictionary:
 			"properties": {
 				"kind": {"const": "speak"},
 				"text": {"type": "string", "description": "Japanese colloquial, one short sentence."},
-				"target": target_schema
+				"target": {"type": "string", "description": "Single addressee's agent name."},
+				"targets": {"type": "array", "items": {"type": "string"}, "description": "For multi-addressee speech. Use instead of `target` when more than one name."}
 			},
 			"required": ["kind", "text"],
 			"additionalProperties": false

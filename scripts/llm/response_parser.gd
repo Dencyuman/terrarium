@@ -87,7 +87,11 @@ static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) ->
 			var text: String = str(d.get("text", "")).strip_edges()
 			if text.is_empty():
 				return Action.wait("parse: empty speech")
-			var target_ids: Array[int] = _parse_targets(d.get("target", null), agents)
+			# 複数宛先は `targets` (plural) 、単一宛先は `target`。両方あったら targets 優先。
+			var raw_targets = d.get("targets", null)
+			if raw_targets == null:
+				raw_targets = d.get("target", null)
+			var target_ids: Array[int] = _parse_targets(raw_targets, agents)
 			return Action.speak(text, target_ids, reason)
 		"give":
 			var tid: int = _parse_single_target(d.get("target", null), agents)
