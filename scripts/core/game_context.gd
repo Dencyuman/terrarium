@@ -5,3 +5,5 @@ extends Node
 # -1 = 未選択(直接 Main を叩いた場合はデフォルトテラリウムにフォールバック)。
 
 var selected_terrarium_id: int = -1
+# リプレイ閲覧用。RunTimeline.tscn を開くときに RunBrowser からセットする。
+var selected_run_id: int = -1

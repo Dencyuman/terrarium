@@ -216,6 +216,63 @@ func start_run(terrarium_id: int, provider: String, model: String) -> int:
 	print("[TerrariumStore] started run id=%d (terrarium=%d, %s/%s)" % [current_run_id, terrarium_id, provider, model])
 	return current_run_id
 
+func list_all_runs() -> Array:
+	# 全 run を新しい順で返す。terrarium_title を JOIN。
+	if db == null:
+		return []
+	db.query("""
+		SELECT
+			r.id, r.terrarium_id, r.started_at, r.ended_at,
+			r.final_tick, r.final_alive, r.final_total,
+			r.provider, r.model, r.input_tokens, r.output_tokens, r.cost_usd,
+			t.title AS terrarium_title
+		FROM runs r
+		LEFT JOIN terrariums t ON t.id = r.terrarium_id
+		ORDER BY r.id DESC
+	""")
+	return db.query_result
+
+func get_run(run_id: int) -> Dictionary:
+	if db == null:
+		return {}
+	db.query("""
+		SELECT
+			r.*, t.title AS terrarium_title, t.world_size, t.world_seed
+		FROM runs r
+		LEFT JOIN terrariums t ON t.id = r.terrarium_id
+		WHERE r.id = %d
+	""" % run_id)
+	if db.query_result.is_empty():
+		return {}
+	return db.query_result[0]
+
+# 表示用イベントストリーム。llm_request / llm_response はノイズが多いので除外、
+# action は succeeded=true のみ通す(失敗は wait 相当で流れが読みづらくなる)。
+func list_events_for_run(run_id: int, agent_name_filter: String = "", include_failed: bool = false) -> Array:
+	if db == null:
+		return []
+	var where := "run_id = %d AND type IN ('action', 'event')" % run_id
+	if agent_name_filter != "":
+		where += " AND agent_name = '%s'" % agent_name_filter.replace("'", "''")
+	db.query("SELECT tick, ts, type, agent_name, kind, data_json FROM events WHERE " + where + " ORDER BY id ASC")
+	var out: Array = []
+	for row in db.query_result:
+		if not include_failed and str(row["type"]) == "action":
+			var d = JSON.parse_string(str(row.get("data_json", "{}")))
+			if d is Dictionary and not bool(d.get("succeeded", true)):
+				continue
+		out.append(row)
+	return out
+
+func list_run_agent_names(run_id: int) -> Array:
+	if db == null:
+		return []
+	db.query("SELECT DISTINCT agent_name FROM events WHERE run_id = %d AND agent_name != '' ORDER BY agent_name" % run_id)
+	var out: Array = []
+	for row in db.query_result:
+		out.append(str(row["agent_name"]))
+	return out
+
 func find_active_run(terrarium_id: int) -> int:
 	# ended_at が NULL の最新 run を返す。無ければ -1。
 	if db == null:

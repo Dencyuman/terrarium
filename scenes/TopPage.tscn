@@ -54,6 +54,14 @@ offset_bottom = 100.0
 theme_override_font_sizes/font_size = 14
 text = "＋ 新規作成"
 
+[node name="RunsBtn" type="Button" parent="UI"]
+offset_left = 1040.0
+offset_top = 60.0
+offset_right = 1208.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 13
+text = "📜 過去 run"
+
 [node name="ListPanel" type="Panel" parent="UI"]
 offset_left = 48.0
 offset_top = 140.0

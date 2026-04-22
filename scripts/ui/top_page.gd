@@ -14,6 +14,9 @@ func _ready() -> void:
 	var new_btn := get_node_or_null(^"UI/NewBtn") as Button
 	if new_btn != null:
 		new_btn.pressed.connect(_on_new_pressed)
+	var runs_btn := get_node_or_null(^"UI/RunsBtn") as Button
+	if runs_btn != null:
+		runs_btn.pressed.connect(_on_runs_pressed)
 	_refresh_list()
 
 func _exit_tree() -> void:
@@ -128,6 +131,10 @@ func _count_cast(row: Dictionary) -> int:
 func _on_new_pressed() -> void:
 	GameContext.selected_terrarium_id = -1
 	get_tree().change_scene_to_file("res://scenes/Editor.tscn")
+
+func _on_runs_pressed() -> void:
+	GameContext.selected_run_id = -1
+	get_tree().change_scene_to_file("res://scenes/RunBrowser.tscn")
 
 func _on_edit_pressed(terrarium_id: int) -> void:
 	GameContext.selected_terrarium_id = terrarium_id
