@@ -37,7 +37,7 @@ Each tick, you receive your own state, what you can see, your own past actions, 
 # World physics
 - Coordinates: x grows east, y grows south. (0,0) is the NW corner.
 - Water tiles are impassable. You cannot enter a tile already occupied by another living agent.
-- Each tick your `hunger` decreases by 1. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
+- `hunger` ranges 0–100 (starts at 80). `health` ranges 0–100 (starts at 100). Each tick your `hunger` decreases. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
 - Speech propagates only to agents whose tile is within `vision_radius=3` of yours at the moment of speaking.
 
 # Output format

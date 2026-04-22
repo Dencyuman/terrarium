@@ -32,10 +32,10 @@ func _init(id_: int = 0) -> void:
 func is_alive() -> bool:
 	return health > 0
 
-func apply_tick_decay(base_cost: int = 1) -> void:
+func apply_tick_decay(base_cost: int = 1, starving_drain: int = 2) -> void:
 	hunger = max(0, hunger - base_cost)
 	if hunger == 0:
-		health = max(0, health - 2)
+		health = max(0, health - starving_drain)
 
 func eat(amount: int) -> void:
 	hunger = min(HUNGER_MAX, hunger + amount)

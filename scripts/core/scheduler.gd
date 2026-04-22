@@ -41,6 +41,7 @@ var phase: int = Phase.IDLE
 var tick_base_hunger: int = 1
 var move_hunger: int = 2
 var speak_hunger: int = 1
+var starving_health_drain: int = 2
 
 func _init(world_: World, resources_: ResourceField, agents_: Array, seed_: int, tick_per_day_: int = 10) -> void:
 	world = world_
@@ -54,6 +55,7 @@ func configure_costs(cfg: Dictionary) -> void:
 	tick_base_hunger = int(cfg.get("tick_base_hunger", tick_base_hunger))
 	move_hunger = int(cfg.get("move_hunger", move_hunger))
 	speak_hunger = int(cfg.get("speak_hunger", speak_hunger))
+	starving_health_drain = int(cfg.get("starving_health_drain", starving_health_drain))
 
 func step() -> void:
 	# Phase 2 互換の同期 step。Phase 3 以降は Main が
@@ -148,7 +150,7 @@ func apply_bundle_for_agent(agent: Agent, bundle: Array) -> void:
 	agent.own_history.append("t%d %s" % [tick, summary])
 	while agent.own_history.size() > 5:
 		agent.own_history.pop_front()
-	agent.apply_tick_decay(tick_base_hunger)
+	agent.apply_tick_decay(tick_base_hunger, starving_health_drain)
 
 func finalize_tick() -> void:
 	# tick 境界で resource 再生と day 進行を処理。LLM 経路で apply_bundle_for_agent を
