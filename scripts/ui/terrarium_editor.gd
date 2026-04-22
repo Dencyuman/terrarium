@@ -247,6 +247,10 @@ func _on_save_pressed() -> void:
 	base_config["world"]["seed"] = seed_v
 	base_config["world"]["size"] = 20
 	base_config["world"]["tick_per_day"] = tpd
+	# LLM provider / モデル / API key はテラリウムに埋め込まず、ランタイムで
+	# config.json + config.local.json から都度注入する。これで 1 つのテラリウム
+	# を複数 LLM で走らせて比較できる。
+	base_config.erase("llm")
 	var data := {
 		"title": title,
 		"description": desc,

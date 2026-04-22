@@ -61,6 +61,11 @@ func _ready() -> void:
 	if not run_logger.open():
 		push_error("TerrariumStore open failed; persistence disabled")
 
+	# ランタイム LLM 設定(config.json + config.local.json)は常にフレッシュに取得。
+	# テラリウムに保存される config_json には llm キーは含まれない(エディタが erase する)。
+	var runtime_cfg: Dictionary = _load_config()
+	var runtime_llm: Dictionary = runtime_cfg.get("llm", {})
+
 	# GameContext 経由でテラリウム ID が渡されている場合は DB からロード。
 	# 直接 Main.tscn を起動した場合(TopPage を経由しない)は default terrarium にフォールバック。
 	var names_data: Dictionary
@@ -70,7 +75,7 @@ func _ready() -> void:
 		if not t_row.is_empty():
 			config = JSON.parse_string(str(t_row.get("config_json", "{}")))
 			if not (config is Dictionary):
-				config = _load_config()
+				config = runtime_cfg
 			var cast_raw = JSON.parse_string(str(t_row.get("cast_json", "[]")))
 			names_data = {"agents": cast_raw if cast_raw is Array else []}
 			run_logger.current_terrarium_id = selected_id
@@ -78,10 +83,12 @@ func _ready() -> void:
 			current_terrarium_id = selected_id
 	if config == null or config.is_empty():
 		# フォールバック経路: config.json + names.json 直読み + default terrarium 確保
-		config = _load_config()
+		config = runtime_cfg
 		names_data = _load_json("res://data/names.json")
 		if run_logger != null:
 			current_terrarium_id = run_logger.ensure_default_terrarium(config, names_data)
+	# LLM 設定は実験条件ではなくランタイム選択。テラリウム設定に上書き注入する。
+	config["llm"] = runtime_llm
 
 	world_seed = int(config["world"]["seed"])
 	world_size = int(config["world"]["size"])
