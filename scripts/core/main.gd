@@ -1,26 +1,66 @@
 extends Node2D
 
+const BASE_TICK_SEC: float = 0.5  # 1x の 1 tick 実時間(Phase 2 無 LLM 想定)
+
 @export var world_view_path: NodePath = ^"ViewStack/WorldView"
 
 var world: World
 var agents: Array = []
+var resources: ResourceField
+var scheduler: Scheduler
+
 var current_tab: int = 0
 var view_nodes: Array = []
 var tab_buttons: Array = []
 
+var running: bool = false
+var speed_multiplier: float = 1.0
+var accumulator: float = 0.0
+var current_phase_name: String = "Idle"
+
+var world_seed: int = 0
+var world_size: int = 20
+var tick_per_day: int = 10
+var config: Dictionary
+
 func _ready() -> void:
-	var config: Dictionary = _load_json("res://data/config.json")
+	config = _load_json("res://data/config.json")
 	var names_data: Dictionary = _load_json("res://data/names.json")
 
-	var world_seed: int = int(config["world"]["seed"])
-	var world_size: int = int(config["world"]["size"])
-	world = World.new(world_size, world_seed)
-	agents = _spawn_agents(names_data["agents"], world, world_seed)
+	world_seed = int(config["world"]["seed"])
+	world_size = int(config["world"]["size"])
+	tick_per_day = int(config["world"].get("tick_per_day", 10))
 
+	_initialize_simulation(names_data)
 	_wire_views()
 	_wire_tabs()
+	_wire_playback()
 	_populate_ui(config)
 	_select_tab(0)
+	_update_tick_ui()
+
+func _initialize_simulation(names_data: Dictionary) -> void:
+	world = World.new(world_size, world_seed)
+	resources = ResourceField.new(world, world_seed)
+	agents = _spawn_agents(names_data["agents"], world, world_seed)
+	scheduler = Scheduler.new(world, resources, agents, world_seed, tick_per_day)
+	scheduler.phase_changed.connect(_on_phase_changed)
+	scheduler.tick_completed.connect(_on_tick_completed)
+
+func _process(delta: float) -> void:
+	if not running:
+		return
+	var tick_time: float = BASE_TICK_SEC / max(0.01, speed_multiplier)
+	accumulator += delta
+	# 1 フレームあたり進められる tick 数に上限を設けてフリーズ回避
+	var budget: int = 4
+	while accumulator >= tick_time and budget > 0:
+		accumulator -= tick_time
+		budget -= 1
+		scheduler.step()
+	_refresh_runtime_ui()
+
+# --- wiring ---
 
 func _wire_views() -> void:
 	var stack := get_node_or_null(^"ViewStack")
@@ -29,6 +69,7 @@ func _wire_views() -> void:
 	var world_view := stack.get_node_or_null(^"WorldView") as WorldView
 	if world_view != null:
 		world_view.set_world_and_agents(world, agents)
+		world_view.set_resources(resources)
 	var relation := stack.get_node_or_null(^"RelationView") as RelationGraphView
 	if relation != null:
 		relation.set_agents(agents)
@@ -56,6 +97,35 @@ func _wire_tabs() -> void:
 			continue
 		btn.pressed.connect(_on_tab_pressed.bind(i))
 
+func _wire_playback() -> void:
+	var group := get_node_or_null(^"UI/StatusBar/SpeedGroup")
+	if group == null:
+		return
+	var pause: Button = group.get_node_or_null(^"Pause") as Button
+	var spd1: Button = group.get_node_or_null(^"Spd1") as Button
+	var spd2: Button = group.get_node_or_null(^"Spd2") as Button
+	var spd5: Button = group.get_node_or_null(^"Spd5") as Button
+	var reset_btn: Button = group.get_node_or_null(^"Reset") as Button
+	if pause != null:
+		pause.disabled = false
+		pause.text = "▶"
+		pause.pressed.connect(_on_pause_toggled.bind(pause))
+	if spd1 != null:
+		spd1.disabled = false
+		spd1.pressed.connect(_on_speed_changed.bind(1.0, [spd1, spd2, spd5]))
+	if spd2 != null:
+		spd2.disabled = false
+		spd2.pressed.connect(_on_speed_changed.bind(2.0, [spd1, spd2, spd5]))
+	if spd5 != null:
+		spd5.disabled = false
+		spd5.pressed.connect(_on_speed_changed.bind(5.0, [spd1, spd2, spd5]))
+	if reset_btn != null:
+		reset_btn.disabled = false
+		reset_btn.pressed.connect(_on_reset_pressed)
+	_highlight_speed([spd1, spd2, spd5], 0)
+
+# --- handlers ---
+
 func _on_tab_pressed(idx: int) -> void:
 	_select_tab(idx)
 
@@ -67,16 +137,87 @@ func _select_tab(idx: int) -> void:
 			continue
 		view.visible = (i == idx)
 		if i == idx:
-			# invisible の間にキューされた描画要求は落ちている場合があるため、
-			# 可視化時に再リクエストして確実に再描画させる。
 			view.queue_redraw()
 	for i in tab_buttons.size():
 		if tab_buttons[i] != null:
 			tab_buttons[i].button_pressed = (i == idx)
-	# ActionPanel は 世界 タブのみ(Phase 1 では中身空だが可視性だけ連動)
 	var action_panel := get_node_or_null(^"UI/ActionPanel") as Panel
 	if action_panel != null:
 		action_panel.visible = (idx == 0)
+
+func _on_pause_toggled(btn: Button) -> void:
+	running = not running
+	btn.text = "II" if running else "▶"
+	accumulator = 0.0
+
+func _on_speed_changed(mult: float, btns: Array) -> void:
+	speed_multiplier = mult
+	var idx := 0
+	if mult == 2.0:
+		idx = 1
+	elif mult == 5.0:
+		idx = 2
+	_highlight_speed(btns, idx)
+
+func _highlight_speed(btns: Array, active_idx: int) -> void:
+	for i in btns.size():
+		var b: Button = btns[i]
+		if b == null:
+			continue
+		b.button_pressed = (i == active_idx)
+
+func _on_reset_pressed() -> void:
+	running = false
+	accumulator = 0.0
+	var pause := get_node_or_null(^"UI/StatusBar/SpeedGroup/Pause") as Button
+	if pause != null:
+		pause.text = "▶"
+	var names_data: Dictionary = _load_json("res://data/names.json")
+	_initialize_simulation(names_data)
+	_wire_views()
+	_update_tick_ui()
+	_refresh_runtime_ui()
+	var list_body := get_node_or_null(^"UI/AgentListPanel/AgentListBody") as RichTextLabel
+	if list_body != null:
+		list_body.text = _format_agent_list()
+
+func _on_phase_changed(phase_name: String) -> void:
+	current_phase_name = phase_name
+
+func _on_tick_completed(_tick_no: int) -> void:
+	# tick 毎に重い描画は避け、_process で refresh する
+	pass
+
+# --- UI refresh ---
+
+func _refresh_runtime_ui() -> void:
+	var world_view := get_node_or_null(world_view_path) as WorldView
+	if world_view != null:
+		world_view.queue_redraw()
+	_update_tick_ui()
+
+func _update_tick_ui() -> void:
+	var tick_value := get_node_or_null(^"UI/StatusBar/TickValue") as Label
+	if tick_value != null:
+		tick_value.text = "%04d" % scheduler.tick
+	var day_value := get_node_or_null(^"UI/StatusBar/DayValue") as Label
+	if day_value != null:
+		day_value.text = "%03d" % scheduler.day
+	var alive_count := 0
+	for a in agents:
+		if a.is_alive():
+			alive_count += 1
+	var pop_value := get_node_or_null(^"UI/StatusBar/PopValue") as Label
+	if pop_value != null:
+		pop_value.text = "%d  (%s%d)" % [alive_count, "±" if alive_count == agents.size() else "-", agents.size() - alive_count]
+	var action_header := get_node_or_null(^"UI/ActionPanel/Header") as Label
+	if action_header != null:
+		action_header.text = "現在のアクション (Tick %04d)" % scheduler.tick
+	var phase_label := get_node_or_null(^"UI/ActionPanel/PhaseLabel") as Label
+	if phase_label != null:
+		phase_label.text = "フェーズ: %s  ·  並列処理: —" % current_phase_name
+
+# --- agent spawn / JSON ---
 
 func _spawn_agents(defs: Array, w: World, seed_: int) -> Array:
 	var rng := RandomNumberGenerator.new()
@@ -118,11 +259,7 @@ func _load_json(path: String) -> Variant:
 	f.close()
 	return JSON.parse_string(text)
 
-func _populate_ui(config: Dictionary) -> void:
-	var pop_value := get_node_or_null(^"UI/StatusBar/PopValue") as Label
-	if pop_value != null:
-		pop_value.text = "%d  (±0)" % agents.size()
-
+func _populate_ui(cfg: Dictionary) -> void:
 	var agent_header := get_node_or_null(^"UI/AgentListPanel/Header") as Label
 	if agent_header != null:
 		agent_header.text = "エージェント (%d)" % agents.size()
@@ -133,16 +270,16 @@ func _populate_ui(config: Dictionary) -> void:
 
 	var seed_label := get_node_or_null(^"UI/FooterBar/SeedStatus") as Label
 	if seed_label != null:
-		seed_label.text = "OBSERVER MODE  ·  seed 0x%08X" % int(config["world"]["seed"])
+		seed_label.text = "OBSERVER MODE  ·  seed 0x%08X" % world_seed
 
 	var model_label := get_node_or_null(^"UI/FooterBar/ModelStatus") as Label
 	if model_label != null:
-		var thinking := "ON" if bool(config["llm"]["thinking_mode"]) else "OFF"
-		model_label.text = "●  モデル  %s  (thinking: %s)" % [config["llm"]["model"], thinking]
+		var thinking := "ON" if bool(cfg["llm"]["thinking_mode"]) else "OFF"
+		model_label.text = "●  モデル  %s  (thinking: %s)" % [cfg["llm"]["model"], thinking]
 
 	var conn_label := get_node_or_null(^"UI/FooterBar/ConnectionStatus") as Label
 	if conn_label != null:
-		conn_label.text = "●  接続 Ollama  %s" % _strip_scheme(config["llm"]["endpoint"])
+		conn_label.text = "●  接続 Ollama  %s" % _strip_scheme(cfg["llm"]["endpoint"])
 
 func _format_agent_list() -> String:
 	var lines: Array = []

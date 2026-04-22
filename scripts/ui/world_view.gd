@@ -9,6 +9,7 @@ const MINIMAP_MARGIN: int = 8
 
 var world: World
 var agents: Array = []
+var resources: ResourceField
 var badge_font: SystemFont
 
 # ダーク chrome 上で世界が発光して見えるよう、自然色は維持しつつ彩度をやや調整。
@@ -42,14 +43,36 @@ func set_world_and_agents(w: World, a: Array) -> void:
 	agents = a
 	queue_redraw()
 
+func set_resources(r: ResourceField) -> void:
+	resources = r
+	queue_redraw()
+
 func _draw() -> void:
 	if world == null:
 		return
 	_draw_tiles()
 	_draw_grid()
+	_draw_food()
 	_draw_world_frame()
 	_draw_agents()
 	_draw_minimap()
+
+func _draw_food() -> void:
+	if resources == null:
+		return
+	var color := Color(0.88, 0.30, 0.26, 1)
+	var shadow := Color(0, 0, 0, 0.35)
+	for y in world.size:
+		for x in world.size:
+			if not resources.has_food(x, y):
+				continue
+			var center := Vector2(
+				x * TILE_SIZE + TILE_SIZE / 2.0,
+				y * TILE_SIZE + TILE_SIZE / 2.0
+			)
+			draw_circle(center + Vector2(0.5, 1.5), 3.5, shadow)
+			draw_circle(center, 3.5, color)
+			draw_arc(center, 3.5, 0, TAU, 16, Color(1, 1, 1, 0.5), 0.8)
 
 func _draw_tiles() -> void:
 	for y in world.size:
@@ -125,6 +148,14 @@ func _draw_minimap() -> void:
 				Vector2(cell + 0.5, cell + 0.5)
 			)
 			draw_rect(r, TERRAIN_COLORS_DIM[t], true)
+	# 食料ドット(エージェントより下に)
+	if resources != null:
+		for y in world.size:
+			for x in world.size:
+				if not resources.has_food(x, y):
+					continue
+				var fp := mm_origin + Vector2((x + 0.5) * cell, (y + 0.5) * cell)
+				draw_circle(fp, max(0.8, cell * 0.2), Color(0.88, 0.30, 0.26, 1))
 	# エージェントドット
 	for agent in agents:
 		var p := mm_origin + Vector2(
