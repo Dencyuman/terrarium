@@ -33,6 +33,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
     - an array of names → addressed to multiple agents at once
     - omitted → no one in particular (announcement / muttering to yourself)
   All living agents within your vision radius hear the words regardless of `target`. But `target` is the *physical act of attribution*: the harness only updates the named agent(s)' `affection` and `trust` toward you from this utterance. Unaddressed speech leaves no relational trace — words heard but not tied to anyone. If you are speaking *to* someone (calling their name, asking them, threatening them, comforting them), set `target`; otherwise the harness records your words as uncommitted.
+- "look": gaze into the distance in one cardinal direction. field `direction`: "north" / "south" / "east" / "west" (diagonals are auto-snapped to the nearest cardinal). You peer in a strip **5 tiles deep × 3 tiles wide** centered on your line of sight. Every tile in that strip is remembered in your `scouted_tiles` memory (terrain type, food present, agent/corpse present) along with the tick when you looked. `look` costs stamina but lets you perceive beyond the default vision radius. The memory is a snapshot: if you look east at tick 10 and see food at (15,5), someone else may consume it by tick 15 — your memory still shows it until you look again. No hunger cost.
 - "wait": do nothing.
 
 # Same-tick physics
@@ -40,6 +41,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - Per-kind physical limits per tick:
   - `speak`: up to 1 (one voice, one utterance)
   - `wait`: up to 1
+  - `look`: up to 1 (you can focus on one direction per tick)
   - `move`: up to 3 (walk several steps)
   - `take`: up to 5 (no per-kind cap beyond the 5-action bundle cap)
   - `eat` / `give` / `attack` / `embrace`: up to 2 each (body can do each a couple of times)
@@ -73,6 +75,7 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - `vision[i].corpse` marks a tile that holds the body of a dead agent (named). The corpse stays where the agent fell and does not move. give / attack / embrace cannot target it. You can still see and talk around it.
 - `own_history` entries marked `(failed:<reason>)` are actions you previously attempted but that the world did not allow. Avoid repeating the same impossible attempt.
 - `life_events` is your longer-retention memory of physically significant events you have lived through or witnessed firsthand (your own violence given or received, deaths you saw, gifts and embraces you were part of). It persists across many ticks — far longer than `recent_events` — so events that happened dozens of ticks ago can still be here. The harness records them as raw occurrences with a tick stamp; it does not mark them as "important" or tell you what to do with them. These are simply things you remember.
+- `scouted_tiles` is your memory of tiles you previously perceived via `look`. Each entry is tagged with the tick it was observed. Because it is a snapshot, a food flag in a scouted_tile may already be gone if someone ate it, and an agent marker may be stale if they moved. Treat it as past-observation-of-distance, not current-state.
 
 # Output
 Call the `act` tool exactly once, passing this tick's action bundle as its arguments. Do not write any free text outside the tool call. `actions` may be empty (equivalent to a single wait). Omit fields that do not apply to a given action's `kind`.
@@ -93,12 +96,12 @@ static func tool_schema_flat() -> Dictionary:
 		"type": "object",
 		"properties": {
 			"kind": {"type": "string", "enum": [
-				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace"
+				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace", "look"
 			]},
 			"direction": {"type": "string", "enum": [
 				"north", "south", "east", "west",
 				"northeast", "northwest", "southeast", "southwest"
-			], "description": "Required for move. For take, optional (omit = own tile)."},
+			], "description": "Required for move and look. For take, optional (omit = own tile). look accepts only cardinal directions (NSEW); diagonals will be snapped."},
 			"target": {"type": "string", "description": "Agent name. Required for give/attack/embrace. Optional for speak."},
 			"text": {"type": "string", "description": "Speech content (Japanese colloquial). Required for speak."}
 		},
@@ -213,10 +216,19 @@ static func tool_schema() -> Dictionary:
 			},
 			"required": ["kind", "target"],
 			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "look"},
+				"direction": {"type": "string", "enum": ["north", "south", "east", "west"]}
+			},
+			"required": ["kind", "direction"],
+			"additionalProperties": false
 		}
 	]
 	var per_kind_limits := {
-		"wait": 1, "speak": 1, "move": 3,
+		"wait": 1, "speak": 1, "move": 3, "look": 1,
 		"take": 5, "eat": 2, "give": 2, "attack": 2, "embrace": 2,
 	}
 	var all_of: Array = []
@@ -267,6 +279,8 @@ static func build_user_prompt(agent: Agent, world: World, resources: ResourceFie
 		obj["recent_events"] = agent.recent_events
 	if agent.life_events.size() > 0:
 		obj["life_events"] = agent.life_events
+	if agent.scouted_tiles.size() > 0:
+		obj["scouted_tiles"] = agent.scouted_tiles
 	var rels: Array = agent.top_relations(RELATIONS_LIMIT, agents, VISION_RADIUS)
 	if rels.size() > 0:
 		obj["relations"] = rels

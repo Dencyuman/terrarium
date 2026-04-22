@@ -454,6 +454,7 @@ func _serialize_agent(a: Agent) -> Dictionary:
 		"recent_events": a.recent_events.duplicate(),
 		"own_history": a.own_history.duplicate(),
 		"life_events": a.life_events.duplicate(),
+		"scouted_tiles": a.scouted_tiles.duplicate(true),
 	}
 
 func _apply_state_snapshot(snap: Dictionary) -> void:
@@ -521,6 +522,11 @@ func _deserialize_agent_state(a: Agent, dump: Dictionary) -> void:
 	a.life_events = []
 	if le is Array:
 		for e in le: a.life_events.append(str(e))
+	var sc = dump.get("scouted_tiles", [])
+	a.scouted_tiles = []
+	if sc is Array:
+		for e in sc:
+			if e is Dictionary: a.scouted_tiles.append(e.duplicate(true))
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:
@@ -822,6 +828,11 @@ func _append_log_entry(agent: Agent, act: Action) -> void:
 			var em_name := em_target.agent_name if em_target != null else "?"
 			line = "%s  [color=%s][b]%s[/b][/color] [color=#e0a0c0]— embrace →[/color] [b]%s[/b]" % [
 				tick_str, hex, agent.agent_name, em_name
+			]
+		Action.Kind.LOOK:
+			var ldir := _direction_label(act.direction)
+			line = "%s  [color=%s][b]%s[/b][/color]  [color=#a7c5e0]— 眺める %s[/color]" % [
+				tick_str, hex, agent.agent_name, ldir
 			]
 		_:
 			return

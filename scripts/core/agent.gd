@@ -42,6 +42,10 @@ var own_history: Array[String] = []
 # 中期記憶: 高 salience 物理イベント(attack / death 目撃、give/embrace 関与)を
 # 平坦タイムラインで 20 件ロール保持。recent_events より長寿命、interactions より広範。
 var life_events: Array[String] = []
+# 遠方観察(look アクション)で覗き見た視界外タイルの記憶。
+# 各 entry = {tick: int, pos: [x,y], terrain: str, food?: bool, agent?: str, corpse?: str}
+var scouted_tiles: Array = []
+const SCOUTED_TILES_MAX: int = 24
 
 func _init(id_: int = 0) -> void:
 	id = id_
@@ -107,6 +111,11 @@ func adjust_relation(other_id: int, d_affection: int, d_trust: int, current_tick
 	rel["affection"] = clamp(int(rel["affection"]) + d_affection, -100, 100)
 	rel["trust"] = clamp(int(rel["trust"]) + d_trust, 0, 100)
 	rel["last_tick"] = current_tick
+
+func append_scouted(entry: Dictionary) -> void:
+	scouted_tiles.append(entry)
+	while scouted_tiles.size() > SCOUTED_TILES_MAX:
+		scouted_tiles.pop_front()
 
 func append_life_event(current_tick: int, text: String) -> void:
 	life_events.append("t%d %s" % [current_tick, text])

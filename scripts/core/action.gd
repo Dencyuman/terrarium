@@ -1,7 +1,7 @@
 class_name Action
 extends RefCounted
 
-enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE }
+enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE, LOOK }
 
 var kind: int = Kind.WAIT
 var direction: Vector2i = Vector2i.ZERO
@@ -63,6 +63,15 @@ static func embrace(target_id_: int, reason_: String = "") -> Action:
 	a.reason = reason_
 	return a
 
+static func look(dir: Vector2i, reason_: String = "") -> Action:
+	# 一時的な遠方観察。自身から dir の方向に矩形(5×3)を覗き見る。
+	# 結果は scouted_tiles に記憶される(vision 半径を越えた情報の一次取得)。
+	var a := Action.new()
+	a.kind = Kind.LOOK
+	a.direction = dir
+	a.reason = reason_
+	return a
+
 static func speak(text: String, target_ids: Array[int] = [] as Array[int], reason_: String = "") -> Action:
 	var a := Action.new()
 	a.kind = Kind.SPEAK
@@ -81,4 +90,5 @@ func kind_label() -> String:
 		Kind.GIVE: return "give"
 		Kind.ATTACK: return "attack"
 		Kind.EMBRACE: return "embrace"
+		Kind.LOOK: return "look"
 		_: return "?"

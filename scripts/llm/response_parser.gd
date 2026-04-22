@@ -104,6 +104,11 @@ static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) ->
 			if tid3 < 0:
 				return Action.wait("parse: embrace missing target")
 			return Action.embrace(tid3, reason)
+		"look", "眺める", "見る":
+			var ldir_raw: String = str(d.get("direction", "")).to_lower().strip_edges()
+			if not DIRECTIONS.has(ldir_raw):
+				return Action.wait("parse: bad look direction %s" % ldir_raw)
+			return Action.look(DIRECTIONS[ldir_raw], reason)
 		_:
 			return null
 

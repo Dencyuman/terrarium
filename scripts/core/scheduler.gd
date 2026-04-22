@@ -32,7 +32,11 @@ const PER_KIND_MAX := {
 	Action.Kind.ATTACK: 2,
 	Action.Kind.EMBRACE: 2,
 	Action.Kind.SPEAK: 1,
+	Action.Kind.LOOK: 1,
 }
+
+const LOOK_LENGTH: int = 5   # 覗き見る奥行き(方向 5 マス)
+const LOOK_HALF_WIDTH: int = 1   # 幅 ±1(合計 3)
 
 var world: World
 var resources: ResourceField
@@ -64,6 +68,7 @@ var embrace_stamina_cost: int = 5
 var embrace_stamina_gift: int = 3
 var speak_stamina: int = 2
 var wait_stamina_restore: int = 10
+var look_stamina: int = 2
 
 # 関係性の更新量(config.json の relations セクションで上書き可能)
 var rel_affection_per_give: int = 10
@@ -105,6 +110,7 @@ func configure_costs(cfg: Dictionary) -> void:
 	embrace_stamina_gift = int(cfg.get("embrace_stamina_gift", embrace_stamina_gift))
 	speak_stamina = int(cfg.get("speak_stamina", speak_stamina))
 	wait_stamina_restore = int(cfg.get("wait_stamina_restore", wait_stamina_restore))
+	look_stamina = int(cfg.get("look_stamina", look_stamina))
 
 func configure_relations(cfg: Dictionary) -> void:
 	rel_affection_per_give = int(cfg.get("affection_per_give", rel_affection_per_give))
@@ -415,6 +421,8 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			agent.spend_stamina(speak_stamina)
 			_propagate_speech(agent, action)
 			action.succeeded = true
+		Action.Kind.LOOK:
+			_apply_look(agent, action)
 
 # --- 新しい物理動作(Phase 4) ---
 
@@ -620,6 +628,65 @@ func _apply_embrace(agent: Agent, action: Action) -> void:
 	while target.recent_events.size() > 5:
 		target.recent_events.pop_front()
 
+# look アクション: エージェントが direction の方向に 5 マス奥行き × 幅 3 を覗き見る。
+# 結果は scouted_tiles に各タイル分の dict として追記される。
+# direction は cardinal 4 方位 (北/東/南/西) のみを想定(斜めは未対応)。
+func _apply_look(agent: Agent, action: Action) -> void:
+	if not agent.can_afford_stamina(look_stamina):
+		action.failure_note = "exhausted"
+		return
+	var dir: Vector2i = action.direction
+	# 斜め指定は 4 方位にスナップ(x or y の優勢側を残す)
+	if dir.x != 0 and dir.y != 0:
+		if absi(dir.x) >= absi(dir.y):
+			dir = Vector2i(sign(dir.x), 0)
+		else:
+			dir = Vector2i(0, sign(dir.y))
+	if dir == Vector2i.ZERO:
+		action.failure_note = "no_direction"
+		return
+	# 幅の「垂直」単位ベクトル(direction に直交)
+	var perp := Vector2i(-dir.y, dir.x)
+	var living_by_pos: Dictionary = {}
+	for a in agents:
+		if a.id == agent.id: continue
+		living_by_pos[a.grid_pos] = a
+	var seen_any: bool = false
+	for step in range(1, LOOK_LENGTH + 1):
+		for w in range(-LOOK_HALF_WIDTH, LOOK_HALF_WIDTH + 1):
+			var tx: int = agent.grid_pos.x + dir.x * step + perp.x * w
+			var ty: int = agent.grid_pos.y + dir.y * step + perp.y * w
+			if not _in_bounds(tx, ty):
+				continue
+			var t: int = world.get_terrain(tx, ty)
+			var entry: Dictionary = {
+				"tick": tick,
+				"pos": [tx, ty],
+				"terrain": _terrain_name(t),
+			}
+			if resources.has_food(tx, ty):
+				entry["food"] = true
+			var occ: Agent = living_by_pos.get(Vector2i(tx, ty), null)
+			if occ != null:
+				if occ.is_alive():
+					entry["agent"] = occ.agent_name
+				else:
+					entry["corpse"] = occ.agent_name
+			agent.append_scouted(entry)
+			seen_any = true
+	if not seen_any:
+		action.failure_note = "out_of_bounds"
+		return
+	agent.spend_stamina(look_stamina)
+	action.succeeded = true
+
+func _terrain_name(t: int) -> String:
+	match t:
+		1: return "water"
+		2: return "forest"
+		3: return "rock"
+		_: return "grass"
+
 func _propagate_speech(speaker: Agent, action: Action) -> void:
 	# broadcast: 話者の視界半径 3 内全員に伝達。
 	# target_ids の扱いは音声イベントのラベリングだけで、物理的伝達範囲には影響しない。
@@ -697,6 +764,15 @@ func _summarize_action(action: Action) -> String:
 			base = "attack"
 		Action.Kind.EMBRACE:
 			base = "embrace"
+		Action.Kind.LOOK:
+			var ldir := ""
+			match action.direction:
+				Vector2i(0, -1): ldir = "↑"
+				Vector2i(0, 1):  ldir = "↓"
+				Vector2i(1, 0):  ldir = "→"
+				Vector2i(-1, 0): ldir = "←"
+				_: ldir = "?"
+			base = "look " + ldir
 		Action.Kind.SPEAK:
 			base = "speak \"%s\"" % action.speech_text
 		_:

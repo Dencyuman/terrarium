@@ -47,7 +47,8 @@
     "embrace_stamina_cost": 5,
     "embrace_stamina_gift": 3,
     "speak_stamina": 2,
-    "wait_stamina_restore": 10
+    "wait_stamina_restore": 10,
+    "look_stamina": 2
   },
   "resources": {
     "_comment": "食料スポーン率(確率、地形別)。grass/forest のみ食料が出る。",
