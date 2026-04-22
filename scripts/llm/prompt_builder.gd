@@ -67,7 +67,8 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - `you.can_eat_now` = true iff eat would succeed this tick (inventory has food OR current tile has food).
 - `you.adjacent_food.<direction>` = true iff an orthogonally adjacent tile in that direction has food. If you want to eat food that is next to you, pair `move` in that direction with `take` or `eat` in the same tick — the actions execute in the order you list, so take/eat after move evaluates from the new position.
 - `you.adjacent_agents.<direction>` = name of the living agent in that direction, or null. give / attack / embrace require the target to be adjacent; use this to check before choosing those verbs.
-- `you.edge_touches.<direction>` = true iff a `move` in that direction (any of the 8 compass directions) would step off the map. Diagonals are marked true if the x or y axis would go out of bounds. Use this to avoid wasting a `move` on a dead end.
+- `you.adjacent_terrain.<direction>` = terrain name of the tile in each of the 8 compass directions, or `"edge"` if off the map. Use this to avoid moving into `water` (impassable) or `"edge"` (out of bounds), and to weigh the cost of stepping onto `rock` (higher hunger drain).
+- `you.edge_touches.<direction>` = true iff a `move` in that direction would step off the map. Redundant with `adjacent_terrain == "edge"` but convenient as a bool.
 - `vision[i].agent` entries include `hunger` and `health` of the visible agent. You can see at a glance who is hungry and who is wounded. This is physically observable (visible body condition).
 - `vision[i].corpse` marks a tile that holds the body of a dead agent (named). The corpse stays where the agent fell and does not move. give / attack / embrace cannot target it. You can still see and talk around it.
 - `own_history` entries marked `(failed:<reason>)` are actions you previously attempted but that the world did not allow. Avoid repeating the same impossible attempt.
@@ -294,8 +295,33 @@ static func _agent_state(agent: Agent, world: World, resources: ResourceField, a
 		"can_eat_now": food_here or agent.inventory.size() > 0,
 		"adjacent_food": _adjacent_food(agent, world, resources),
 		"adjacent_agents": _adjacent_agents(agent, world, agents),
+		"adjacent_terrain": _adjacent_terrain(agent, world),
 		"edge_touches": _edge_touches(agent, world),
 	}
+
+# 8 方向の隣接タイルの terrain。盤外は "edge"。
+# これで水・岩の回避や端の認識が tactical レイヤで即断できる。
+static func _adjacent_terrain(agent: Agent, world: World) -> Dictionary:
+	var dirs := {
+		"north":     Vector2i(0, -1),
+		"south":     Vector2i(0, 1),
+		"east":      Vector2i(1, 0),
+		"west":      Vector2i(-1, 0),
+		"northeast": Vector2i(1, -1),
+		"northwest": Vector2i(-1, -1),
+		"southeast": Vector2i(1, 1),
+		"southwest": Vector2i(-1, 1),
+	}
+	var out: Dictionary = {}
+	for key in dirs.keys():
+		var d: Vector2i = dirs[key]
+		var nx: int = agent.grid_pos.x + d.x
+		var ny: int = agent.grid_pos.y + d.y
+		if nx < 0 or ny < 0 or nx >= world.size or ny >= world.size:
+			out[key] = "edge"
+		else:
+			out[key] = TERRAIN_NAME.get(world.get_terrain(nx, ny), "grass")
+	return out
 
 static func _edge_touches(agent: Agent, world: World) -> Dictionary:
 	# 8 方向について、その direction に move すると out_of_bounds になるかの事前判定。
@@ -381,8 +407,7 @@ static func _vision(agent: Agent, world: World, resources: ResourceField, agents
 			var t: int = world.get_terrain(x, y)
 			var has_food: bool = resources.has_food(x, y)
 			var has_agent: bool = by_pos.has(Vector2i(x, y))
-			if t == 0 and not has_food and not has_agent:
-				continue
+			# 全タイルを載せる(空の草地も含む)。視野半径内の地形配置を漏れなく提供。
 			var entry: Dictionary = {
 				"pos": [x, y],
 				"terrain": TERRAIN_NAME.get(t, "grass"),
