@@ -394,6 +394,8 @@ func _on_tick_completed_with_logging(tick_no: int) -> void:
 		if a.is_alive():
 			alive += 1
 	run_logger.log_tick_boundary(tick_no, scheduler.day, alive)
+	# run 行の集計カラムを tick 境界で反映(途中で SQL 叩いても最新コストが見える)
+	run_logger.update_run_stats(tick_no, alive, agents.size(), total_input_tokens, total_output_tokens, total_cost_usd)
 
 func _on_event_emitted(event: Dictionary) -> void:
 	chronicle_entries.push_back(event)

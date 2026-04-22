@@ -143,6 +143,19 @@ func end_run(final_tick: int, final_alive: int, final_total: int, in_tokens: int
 		"cost_usd": cost_usd,
 	})
 
+# run 進行中の軽量更新。tick 境界で呼んで DB に現況を反映する(ended_at は触らない)。
+func update_run_stats(final_tick: int, final_alive: int, final_total: int, in_tokens: int, out_tokens: int, cost_usd: float) -> void:
+	if current_run_id < 0 or db == null:
+		return
+	db.update_rows("runs", "id = %d" % current_run_id, {
+		"final_tick": final_tick,
+		"final_alive": final_alive,
+		"final_total": final_total,
+		"input_tokens": in_tokens,
+		"output_tokens": out_tokens,
+		"cost_usd": cost_usd,
+	})
+
 # --- event writers (RunLogger 互換のシグネチャ) ---
 
 func log_event(tick: int, event: Dictionary) -> void:
