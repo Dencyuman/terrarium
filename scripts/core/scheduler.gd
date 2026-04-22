@@ -384,18 +384,29 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			var final_pos: Vector2i = step1
 			var slid: bool = false
 			if occupied.has(step1) and occupied[step1] != agent.id:
-				# 1 歩目が他者で占有 → すれ違いで +1 滑り抜けを試す(最大 1 タイルのみ)
-				var step2 := agent.grid_pos + dir * 2
-				if not _in_bounds(step2.x, step2.y):
+				# すれ違い移動: 空きタイルが見つかるまで同方向に延々スキャン。
+				# is_passable が false (= 水タイル) または 盤外に当たったら中断。
+				# 岩は is_passable true なので通過可(岩上の move は hunger コスト高だが通行は可)。
+				# 他の生存エージェントが連続していてもその先に空きがあれば飛ぶ。
+				# 盤面サイズが上限なので最悪でも world.size 回のループ。
+				var found_empty: bool = false
+				var k: int = 2
+				while k <= world.size:
+					var step_k := agent.grid_pos + dir * k
+					if not _in_bounds(step_k.x, step_k.y):
+						action.failure_note = "occupied_blocked"
+						return
+					if not world.is_passable(step_k.x, step_k.y):
+						action.failure_note = "occupied_blocked"
+						return
+					if not occupied.has(step_k) or occupied[step_k] == agent.id:
+						final_pos = step_k
+						found_empty = true
+						break
+					k += 1
+				if not found_empty:
 					action.failure_note = "occupied_blocked"
 					return
-				if not world.is_passable(step2.x, step2.y):
-					action.failure_note = "occupied_blocked"
-					return
-				if occupied.has(step2) and occupied[step2] != agent.id:
-					action.failure_note = "occupied_blocked"
-					return
-				final_pos = step2
 				slid = true
 			if not agent.can_afford_stamina(move_stamina):
 				action.failure_note = "exhausted"

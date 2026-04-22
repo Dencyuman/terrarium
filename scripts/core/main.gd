@@ -1363,6 +1363,11 @@ func _update_agent_detail() -> void:
 	var color: Color = a.badge_color()
 	var hex := "#%02X%02X%02X" % [int(color.r * 255), int(color.g * 255), int(color.b * 255)]
 	var sym := "♀" if a.gender == "female" else "♂"
+	var is_dead: bool = not a.is_alive()
+	# 死体表示用: バッジ・名前・ステータスはトーンダウン
+	var name_hex: String = "#8a8680" if is_dead else hex
+	var text_dim: String = "#6a6660" if is_dead else "#8a8680"
+	var label_primary: String = "#707070" if is_dead else "#e6e4de"
 
 	var head := RichTextLabel.new()
 	head.bbcode_enabled = true
@@ -1370,9 +1375,14 @@ func _update_agent_detail() -> void:
 	head.scroll_active = false
 	head.custom_minimum_size = Vector2(236, 26)
 	head.add_theme_font_size_override("normal_font_size", 13)
-	head.text = "[color=%s]●[/color]  [b]%s[/b]  %s  [color=#8a8680]Age %d  G1[/color]" % [
-		hex, a.agent_name, sym, 20 + (a.id % 10),
-	]
+	if is_dead:
+		head.text = "[color=%s]✕[/color]  [s][b][color=%s]%s[/color][/b][/s]  [color=%s]%s[/color]  [color=%s]享年 %d  (故人)[/color]" % [
+			name_hex, label_primary, a.agent_name, text_dim, sym, text_dim, 20 + (a.id % 10),
+		]
+	else:
+		head.text = "[color=%s]●[/color]  [b]%s[/b]  %s  [color=#8a8680]Age %d  G1[/color]" % [
+			hex, a.agent_name, sym, 20 + (a.id % 10),
+		]
 	content.add_child(head)
 
 	var stats := RichTextLabel.new()
@@ -1381,11 +1391,16 @@ func _update_agent_detail() -> void:
 	stats.scroll_active = false
 	stats.custom_minimum_size = Vector2(236, 72)
 	stats.add_theme_font_size_override("normal_font_size", 11)
-	stats.text = "[color=#8a8680]空腹度[/color]  %s  [b]%d[/b]/100\n[color=#8a8680]体力  [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]元気度[/color]  %s  [b]%d[/b]/100" % [
-		_bar(a.hunger, 100, 14), a.hunger,
-		_bar(a.health, 100, 14), a.health,
-		_bar(a.stamina, 100, 14), a.stamina,
-	]
+	if is_dead:
+		stats.text = "[color=%s]最期の状態[/color]\n[color=%s]  空腹度  [/color][color=%s]%d[/color] / 体力 [color=%s]%d[/color] / 元気度 [color=%s]%d[/color]" % [
+			text_dim, text_dim, text_dim, a.hunger, text_dim, a.health, text_dim, a.stamina,
+		]
+	else:
+		stats.text = "[color=#8a8680]空腹度[/color]  %s  [b]%d[/b]/100\n[color=#8a8680]体力  [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]元気度[/color]  %s  [b]%d[/b]/100" % [
+			_bar(a.hunger, 100, 14), a.hunger,
+			_bar(a.health, 100, 14), a.health,
+			_bar(a.stamina, 100, 14), a.stamina,
+		]
 	content.add_child(stats)
 
 	var personality := RichTextLabel.new()
@@ -1409,7 +1424,8 @@ func _update_agent_detail() -> void:
 	last_action.add_theme_font_size_override("normal_font_size", 11)
 	var action_name := _action_name(a.last_action_kind)
 	var reason_text := a.last_action_reason if a.last_action_reason != "" else "—"
-	last_action.text = "[color=#8a8680]直近の行動[/color]\n  [color=#b4b0a8]%s[/color]\n  [color=#6a6660]%s[/color]" % [action_name, reason_text]
+	var last_label: String = "最期の行動" if is_dead else "直近の行動"
+	last_action.text = "[color=%s]%s[/color]\n  [color=#b4b0a8]%s[/color]\n  [color=#6a6660]%s[/color]" % [text_dim, last_label, action_name, reason_text]
 	content.add_child(last_action)
 
 	var loc := RichTextLabel.new()
@@ -1420,7 +1436,8 @@ func _update_agent_detail() -> void:
 	loc.add_theme_font_size_override("normal_font_size", 11)
 	var terrain_names: Array[String] = ["草地", "水域", "森", "岩場"]
 	var terrain_name: String = terrain_names[world.get_terrain(a.grid_pos.x, a.grid_pos.y)]
-	loc.text = "[color=#8a8680]場所[/color]  (%d, %d) %s" % [a.grid_pos.x, a.grid_pos.y, terrain_name]
+	var loc_label: String = "倒れた場所" if is_dead else "場所"
+	loc.text = "[color=%s]%s[/color]  (%d, %d) %s" % [text_dim, loc_label, a.grid_pos.x, a.grid_pos.y, terrain_name]
 	content.add_child(loc)
 
 	# inventory
