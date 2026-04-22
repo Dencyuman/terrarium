@@ -257,12 +257,16 @@ func get_run(run_id: int) -> Dictionary:
 
 # 表示用イベントストリーム。llm_request / llm_response はノイズが多いので除外、
 # action は succeeded=true のみ通す(失敗は wait 相当で流れが読みづらくなる)。
-func list_events_for_run(run_id: int, agent_name_filter: String = "", include_failed: bool = false) -> Array:
+# agent_name_filter: 空配列なら全員、1 件以上なら該当 agent のみ
+func list_events_for_run(run_id: int, agent_name_filter: Array = [], include_failed: bool = false) -> Array:
 	if db == null:
 		return []
 	var where := "run_id = %d AND type IN ('action', 'event')" % run_id
-	if agent_name_filter != "":
-		where += " AND agent_name = '%s'" % agent_name_filter.replace("'", "''")
+	if agent_name_filter.size() > 0:
+		var escaped: Array = []
+		for name in agent_name_filter:
+			escaped.append("'%s'" % str(name).replace("'", "''"))
+		where += " AND agent_name IN (%s)" % ",".join(escaped)
 	db.query("SELECT tick, ts, type, agent_name, kind, data_json FROM events WHERE " + where + " ORDER BY id ASC")
 	var out: Array = []
 	for row in db.query_result:

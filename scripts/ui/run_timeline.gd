@@ -6,7 +6,7 @@ extends Node2D
 var store: TerrariumStore
 var run_id: int = -1
 var agent_names: Array = []
-var selected_agent: String = ""
+var selected_agents: Array = []   # 空なら全員
 var show_failed: bool = false
 
 func _ready() -> void:
@@ -17,12 +17,15 @@ func _ready() -> void:
 	var back := get_node_or_null(^"UI/BackBtn") as Button
 	if back != null:
 		back.pressed.connect(_on_back_pressed)
-	var af := get_node_or_null(^"UI/FilterPanel/AgentFilter") as OptionButton
-	if af != null:
-		af.item_selected.connect(_on_agent_selected)
+	var al := get_node_or_null(^"UI/FilterPanel/AgentList") as ItemList
+	if al != null:
+		al.multi_selected.connect(_on_agent_multi_selected)
 	var fc := get_node_or_null(^"UI/FilterPanel/FailedCheck") as CheckBox
 	if fc != null:
 		fc.toggled.connect(_on_failed_toggled)
+	var clear_btn := get_node_or_null(^"UI/FilterPanel/ClearBtn") as Button
+	if clear_btn != null:
+		clear_btn.pressed.connect(_on_clear_pressed)
 	_populate_header()
 	_populate_agent_filter()
 	_populate_body()
@@ -54,24 +57,20 @@ func _populate_header() -> void:
 		]
 
 func _populate_agent_filter() -> void:
-	var af := get_node_or_null(^"UI/FilterPanel/AgentFilter") as OptionButton
-	if af == null:
+	var al := get_node_or_null(^"UI/FilterPanel/AgentList") as ItemList
+	if al == null:
 		return
-	af.clear()
-	af.add_item("全員", 0)
+	al.clear()
 	agent_names = store.list_run_agent_names(run_id) if store != null else []
-	var i: int = 1
 	for name in agent_names:
-		af.add_item(name, i)
-		i += 1
-	af.selected = 0
+		al.add_item(name)
 
 func _populate_body() -> void:
 	var body := get_node_or_null(^"UI/ListPanel/Scroll/Body") as RichTextLabel
 	var count_lbl := get_node_or_null(^"UI/FilterPanel/CountLbl") as Label
 	if body == null:
 		return
-	var events: Array = store.list_events_for_run(run_id, selected_agent, show_failed) if store != null else []
+	var events: Array = store.list_events_for_run(run_id, selected_agents, show_failed) if store != null else []
 	if count_lbl != null:
 		count_lbl.text = "%d 件" % events.size()
 	if events.is_empty():
@@ -161,11 +160,21 @@ func _dir_label(dir) -> String:
 		Vector2i(-1, 1): return "↙"
 	return "?"
 
-func _on_agent_selected(idx: int) -> void:
-	if idx == 0:
-		selected_agent = ""
-	else:
-		selected_agent = agent_names[idx - 1]
+func _on_agent_multi_selected(_index: int, _selected: bool) -> void:
+	var al := get_node_or_null(^"UI/FilterPanel/AgentList") as ItemList
+	if al == null:
+		return
+	selected_agents = []
+	for i in al.get_selected_items():
+		if i >= 0 and i < agent_names.size():
+			selected_agents.append(agent_names[i])
+	_populate_body()
+
+func _on_clear_pressed() -> void:
+	var al := get_node_or_null(^"UI/FilterPanel/AgentList") as ItemList
+	if al != null:
+		al.deselect_all()
+	selected_agents = []
 	_populate_body()
 
 func _on_failed_toggled(v: bool) -> void:
