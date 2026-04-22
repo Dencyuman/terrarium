@@ -17,19 +17,39 @@ var cast_data: Array = []           # Array[Dictionary], 各要素 = {name, roma
 # - false なら保存時 terrain_json を空にして seed 生成にフォールバック
 var has_custom_terrain: bool = false
 var _map_canvas = null
-# EnvPanel で編集する環境パラメータ(過酷さ)。config 由来の既定値から始まり、
-# ユーザーが変更したら base_config にマージして保存される。
-const ENV_SPECS := [
-	# [path, label, suffix, min, max, step, hint]
-	[["costs", "eat_hunger_restore"],        "食料1回の回復量",      "", 1.0, 100.0, 1.0,      "大きいほど楽"],
-	[["costs", "tick_base_hunger"],          "tick あたり基礎代謝",  "", 0.0, 10.0, 1.0,       "大きいほど過酷"],
-	[["costs", "starving_health_drain"],     "飢餓時 HP ドレイン",    "", 0.0, 50.0, 1.0,       "大きいほど過酷"],
-	[["costs", "move_hunger"],               "move の hunger コスト(草/森)","", 0.0, 10.0, 1.0,   "大きいほど過酷"],
-	[["costs", "rock_move_hunger"],          "move の hunger コスト(岩)","",    0.0, 20.0, 1.0,   "岩上の移動コスト。草/森より高いのが想定"],
-	[["resources", "initial_spawn", "grass"],  "草地 食料スポーン率", "", 0.0, 1.0, 0.01,     "0..1"],
-	[["resources", "initial_spawn", "forest"], "森 食料スポーン率",   "", 0.0, 1.0, 0.01,     "0..1 (草地より高いのが想定)"],
-	[["resources", "regen_per_tick", "grass"], "草地 食料再生/tick",  "", 0.0, 0.1, 0.001,    "0..0.1"],
-	[["resources", "regen_per_tick", "forest"],"森 食料再生/tick",    "", 0.0, 0.1, 0.001,    "0..0.1 (草地より高いのが想定)"],
+
+# 「共通」タブに並ぶパラメータ。base_config の任意の場所を参照できるよう path 配列で指定。
+# [path, ラベル, ヒント, min, max, step]
+const COMMON_SPECS := [
+	[["costs", "eat_hunger_restore"],        "食事1回で回復する満腹度",            "大きいほど楽", 1.0, 100.0, 1.0],
+	[["costs", "tick_base_hunger"],          "1tick ごとに減る満腹度(基礎代謝)",   "大きいほど過酷", 0.0, 10.0, 1.0],
+	[["costs", "starving_health_drain"],     "空腹時の体力減少(1tickあたり)",      "大きいほど過酷", 0.0, 50.0, 1.0],
+	[["costs", "attack_health_damage"],      "攻撃1回のダメージ",                  "大きいほど過酷", 0.0, 100.0, 1.0],
+]
+
+# 「地形別」タブ用の 1 行定義。各地形がどの field を持つかは違うので spec は地形ごと。
+# "impassable": 通れない / "no_food": 食料が発生しない
+const TERRAIN_ROWS := [
+	{"key": "grass",  "label": "草",
+	 "move_path": ["costs", "move_hunger"],
+	 "spawn_path": ["resources", "initial_spawn", "grass"],
+	 "regen_path": ["resources", "regen_per_tick", "grass"],
+	 "passable": true},
+	{"key": "forest", "label": "森",
+	 "move_path": ["costs", "move_hunger"],
+	 "spawn_path": ["resources", "initial_spawn", "forest"],
+	 "regen_path": ["resources", "regen_per_tick", "forest"],
+	 "passable": true},
+	{"key": "rock",   "label": "岩",
+	 "move_path": ["costs", "rock_move_hunger"],
+	 "spawn_path": null,   # 発生しない
+	 "regen_path": null,
+	 "passable": true},
+	{"key": "water",  "label": "水",
+	 "move_path": null,    # 通れない
+	 "spawn_path": null,
+	 "regen_path": null,
+	 "passable": false},
 ]
 var _env_fields: Dictionary = {}   # path_key("a.b.c") -> SpinBox
 
@@ -64,6 +84,8 @@ func _ready() -> void:
 	_rebuild_cast_list()
 	_apply_readonly_if_needed()
 	_map_canvas.tile_painted.connect(_on_tile_painted)
+	# 初期選択(草)の情報を表示
+	_update_terrain_info(0)
 
 func _exit_tree() -> void:
 	if store != null:
@@ -183,7 +205,7 @@ func _on_palette_pressed(idx: int, names: Array) -> void:
 			b.button_pressed = (i == idx)
 	_update_terrain_info(idx)
 
-# 選択中テレインの物理的な性質をラベルに反映。config 値を読んで具体数値を表示する。
+# 選択中のタイルの性質を自然な日本語で説明する。config 値を読んで具体数値を示す。
 func _update_terrain_info(idx: int) -> void:
 	var info := get_node_or_null(^"UI/MapPanel/TerrainInfo") as Label
 	if info == null:
@@ -192,17 +214,17 @@ func _update_terrain_info(idx: int) -> void:
 	var spawn_forest: float = float(_get_nested(base_config, ["resources", "initial_spawn", "forest"], 0.12))
 	var regen_grass: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "grass"], 0.003))
 	var regen_forest: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "forest"], 0.008))
-	var move_hunger: int = int(_get_nested(base_config, ["costs", "move_hunger"], 2))
-	var rock_hunger: int = int(_get_nested(base_config, ["costs", "rock_move_hunger"], 4))
+	var move_c: int = int(_get_nested(base_config, ["costs", "move_hunger"], 2))
+	var rock_c: int = int(_get_nested(base_config, ["costs", "rock_move_hunger"], 4))
 	match idx:
 		0:
-			info.text = "草 (grass): move hunger -%d / 食料 spawn %.2f・regen %.3f/tick / 通行可" % [move_hunger, spawn_grass, regen_grass]
+			info.text = "草: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生 / 通れる" % [move_c, spawn_grass * 100.0, regen_grass]
 		1:
-			info.text = "水 (water): 通行不可(move は impassable で silent fail)。食料は発生しない。"
+			info.text = "水: 通れない。食料は発生しない。"
 		2:
-			info.text = "森 (forest): move hunger -%d / 食料 spawn %.2f・regen %.3f/tick / 通行可(草より食料豊富)" % [move_hunger, spawn_forest, regen_forest]
+			info.text = "森: 移動で満腹度 -%d / 食料が %.0f%% の確率で発生、%.3f/tick で再生(草より豊か) / 通れる" % [move_c, spawn_forest * 100.0, regen_forest]
 		3:
-			info.text = "岩 (rock): move hunger -%d(草/森より高い)/ 食料は発生しない / 通行可" % [rock_hunger]
+			info.text = "岩: 移動で満腹度 -%d(草/森より厳しい) / 食料は発生しない / 通れる" % [rock_c]
 		_:
 			info.text = ""
 
@@ -239,57 +261,141 @@ func _on_tile_painted(_x: int, _y: int) -> void:
 # --- env panel ---
 
 func _build_env_panel() -> void:
-	var grid := get_node_or_null(^"UI/EnvPanel/Grid") as GridContainer
+	_build_common_tab()
+	_build_terrain_tab()
+
+func _build_common_tab() -> void:
+	var grid := get_node_or_null(^"UI/EnvPanel/Tabs/共通/CommonGrid") as GridContainer
 	if grid == null:
 		return
 	for child in grid.get_children():
 		child.queue_free()
-	for spec in ENV_SPECS:
+	for spec in COMMON_SPECS:
 		var path: Array = spec[0]
 		var label_text: String = spec[1]
+		var hint_text: String = spec[2]
 		var minv: float = spec[3]
 		var maxv: float = spec[4]
 		var step: float = spec[5]
-		var hint: String = spec[6]
+		# col 1: ラベル
 		var lbl := Label.new()
 		lbl.text = label_text
-		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.add_theme_font_size_override("font_size", 11)
 		lbl.add_theme_color_override("font_color", Color(0.820, 0.808, 0.784, 1))
-		lbl.custom_minimum_size = Vector2(160, 28)
+		lbl.custom_minimum_size = Vector2(280, 30)
 		grid.add_child(lbl)
+		# col 2: SpinBox
 		var spin := SpinBox.new()
 		spin.min_value = minv
 		spin.max_value = maxv
 		spin.step = step
 		spin.value = float(_get_nested(base_config, path, minv))
-		spin.custom_minimum_size = Vector2(120, 28)
+		spin.custom_minimum_size = Vector2(100, 28)
 		spin.editable = editable
-		var key := _path_key(path)
-		_env_fields[key] = spin
+		_env_fields[_path_key(path)] = spin
 		spin.value_changed.connect(func(v): _set_nested(base_config, path, v))
 		grid.add_child(spin)
-		# hint は 2 列目(label pair 内)だが GridContainer 4 列構成なので 3, 4 列目にヒント用空 Label(省略可)
-		if hint != "":
-			var hint_lbl := Label.new()
-			hint_lbl.text = hint
-			hint_lbl.add_theme_font_size_override("font_size", 9)
-			hint_lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
-			hint_lbl.custom_minimum_size = Vector2(160, 28)
-			grid.add_child(hint_lbl)
-		else:
-			grid.add_child(Control.new())
-		grid.add_child(Control.new())  # 4 列目の spacer
+		# col 3: ヒント
+		var hint_lbl := Label.new()
+		hint_lbl.text = hint_text
+		hint_lbl.add_theme_font_size_override("font_size", 10)
+		hint_lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
+		hint_lbl.custom_minimum_size = Vector2(280, 28)
+		grid.add_child(hint_lbl)
+
+func _build_terrain_tab() -> void:
+	var grid := get_node_or_null(^"UI/EnvPanel/Tabs/地形別/TerrainGrid") as GridContainer
+	if grid == null:
+		return
+	for child in grid.get_children():
+		child.queue_free()
+	# ヘッダー行
+	for h in ["タイル", "移動で減る満腹度", "食料が発生する確率", "食料が再生する速さ", "通行"]:
+		var h_lbl := Label.new()
+		h_lbl.text = h
+		h_lbl.add_theme_font_size_override("font_size", 10)
+		h_lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
+		h_lbl.custom_minimum_size = Vector2(140, 26)
+		h_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		grid.add_child(h_lbl)
+	for row in TERRAIN_ROWS:
+		_build_terrain_row(grid, row)
+
+func _build_terrain_row(grid: GridContainer, row: Dictionary) -> void:
+	# col 1: タイル名
+	var name_lbl := Label.new()
+	name_lbl.text = str(row["label"])
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_color_override("font_color", Color(0.902, 0.894, 0.871, 1))
+	name_lbl.custom_minimum_size = Vector2(80, 28)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	grid.add_child(name_lbl)
+	# col 2: 移動コスト(編集可 or "−")
+	if row["move_path"] == null:
+		grid.add_child(_dash_label())
+	else:
+		grid.add_child(_make_env_spin(row["move_path"], 0.0, 20.0, 1.0))
+	# col 3: 食料発生率(0..1)
+	if row["spawn_path"] == null:
+		grid.add_child(_dash_label())
+	else:
+		grid.add_child(_make_env_spin(row["spawn_path"], 0.0, 1.0, 0.01))
+	# col 4: 食料再生率/tick
+	if row["regen_path"] == null:
+		grid.add_child(_dash_label())
+	else:
+		grid.add_child(_make_env_spin(row["regen_path"], 0.0, 0.1, 0.001))
+	# col 5: 通行可否(読み取り専用テキスト)
+	var pass_lbl := Label.new()
+	pass_lbl.text = "通れる" if bool(row["passable"]) else "通れない"
+	pass_lbl.add_theme_font_size_override("font_size", 11)
+	var pass_color := Color(0.43, 0.85, 0.54, 1) if bool(row["passable"]) else Color(0.88, 0.44, 0.44, 1)
+	pass_lbl.add_theme_color_override("font_color", pass_color)
+	pass_lbl.custom_minimum_size = Vector2(80, 28)
+	pass_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	grid.add_child(pass_lbl)
+
+func _dash_label() -> Label:
+	var l := Label.new()
+	l.text = "−"
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", Color(0.45, 0.45, 0.48, 1))
+	l.custom_minimum_size = Vector2(120, 28)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return l
+
+func _make_env_spin(path: Array, minv: float, maxv: float, step: float) -> SpinBox:
+	var spin := SpinBox.new()
+	spin.min_value = minv
+	spin.max_value = maxv
+	spin.step = step
+	spin.value = float(_get_nested(base_config, path, minv))
+	spin.custom_minimum_size = Vector2(130, 28)
+	spin.editable = editable
+	_env_fields[_path_key(path)] = spin
+	spin.value_changed.connect(func(v):
+		_set_nested(base_config, path, v)
+		# 値が変わったら地形情報ラベルも最新化
+		var current_idx: int = _current_palette_idx()
+		if current_idx >= 0:
+			_update_terrain_info(current_idx)
+	)
+	return spin
+
+func _current_palette_idx() -> int:
+	var names := ["Grass", "Water", "Forest", "Rock"]
+	for i in range(names.size()):
+		var b := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
+		if b != null and b.button_pressed:
+			return i
+	return -1
 
 func _refresh_env_panel_values() -> void:
-	# base_config が外部から差し替えられた場合(既存テラリウムをロード等)に呼ぶ。
-	for spec in ENV_SPECS:
-		var path: Array = spec[0]
-		var key := _path_key(path)
-		var spin: SpinBox = _env_fields.get(key, null)
-		if spin == null:
-			continue
-		var default_min: float = float(spec[3])
-		spin.value = float(_get_nested(base_config, path, default_min))
+	# base_config が差し替えられた場合(既存テラリウムをロード等)に呼ぶ。
+	for key in _env_fields.keys():
+		var path: Array = (key as String).split(".")
+		var spin: SpinBox = _env_fields[key]
+		spin.value = float(_get_nested(base_config, path, spin.value))
 
 func _get_nested(d: Dictionary, path: Array, default_val) -> Variant:
 	var cur: Variant = d
