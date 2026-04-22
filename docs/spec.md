@@ -318,6 +318,28 @@ v0.1 は以下の Phase に分割して段階的に実装する。各 Phase 完�
 
 **確認事項**: エージェント同士が会話し、関係が変化し、グラフに反映される。反復的な give/embrace を繰り返すペアが relations の interactions に履歴を累積し、speak の中で特別な呼称を使うか(または使わないか)が観察できる。死の目撃者が数十 tick 後にも死者に言及する発話を自発的に行うかが観察できる(伝聞ゴシップの一次伝搬)。
 
+#### Phase 4.5: 永続化基盤とテラリウム概念 (v0.1.0-phase4.5)
+
+当初 v0.2 に予定していたセーブ/リプレイ基盤を前倒し。試行ごとのマップ・キャスト・履歴を一塊の「テラリウム」として定義し、複数回の実験を横串で比較・再生可能にする。
+
+27. **SQLite 永続化**(godot-sqlite v4.5 プラグイン、Godot 4.4 対応、`addons/godot-sqlite/`)。3 テーブル構成:
+    - `terrariums` — マップ(terrain_json)、キャスト(cast_json)、config(config_json) を一塊に保存
+    - `runs` — 1 テラリウムを走らせた 1 回分。コスト、トークン、最終 tick、生存者数、開始/終了時刻
+    - `events` — 各 run に属する全イベント(action / event / llm_request / llm_response / tick_boundary)を tick + agent でインデックス済み
+28. **RunLogger → DBLogger 置換**。既存 `runs/*.jsonl` 路線は廃止し、全履歴を DB に書き込む(debug は DB から抽出するクエリで代替)。過去 run 全取りで replay 可能なデータ粒度を維持
+29. **テラリウムエディタ UI**(Phase 4.5.B):
+    - 起動前 / タブ内で編集。マップは 20×20 タイル手描き(草/森/水/岩、brush + flood-fill)または seed fix
+    - キャスト: 人数可変(1〜20)、名前/性別/性格 3 軸スライダー、初期 hunger 範囲、初期位置指定可
+    - 費用パラメータ(costs, resources, relations)もフォーム編集
+    - 新規作成 / 既存複製 / 保存 / 削除
+30. **リプレイモード**(Phase 4.5.C):
+    - 起動時に「新規 run / 過去 run を再生」選択
+    - run browser: terrariums ごとに runs 一覧、ソート(コスト/tick/生存者数)
+    - 特定 run を開いて時系列再生(速度変更、tick ジャンプ、特定エージェント抽出)
+31. (運営): フッターに現在 run id / terrarium 名を表示。既存 `data/config.json + names.json` は初回起動時に「デフォルトテラリウム」として terrariums テーブルに insert するマイグレーションで引き継ぐ
+
+**確認事項**: 1 run 完走後に DB を SQL で直接叩いて特定エージェントの人生を抽出できる。テラリウムエディタで作った小規模(6〜8 人)セットを保存し、複数回走らせた runs を並列比較できる。
+
 #### Phase 5: ライフサイクル (v0.1.0-phase5)
 
 26. 加齢システム、日の概念

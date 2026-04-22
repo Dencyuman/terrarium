@@ -14,7 +14,8 @@ var agents: Array = []
 var resources: ResourceField
 var scheduler: Scheduler
 var ollama: LLMClient   # 歴史的名前。Ollama / Anthropic のどちらかが入る。
-var run_logger: RunLogger
+var run_logger: TerrariumStore   # Phase 4.5 で DB バックエンド化。メソッド名は RunLogger 互換。
+var current_terrarium_id: int = -1
 
 var current_tab: int = 0
 var view_nodes: Array = []
@@ -59,7 +60,12 @@ func _ready() -> void:
 	config = _load_config()
 	var names_data: Dictionary = _load_json("res://data/names.json")
 
-	run_logger = RunLogger.new()
+	run_logger = TerrariumStore.new()
+	if run_logger.open():
+		var terrarium_id: int = run_logger.ensure_default_terrarium(config, names_data)
+		current_terrarium_id = terrarium_id
+	else:
+		push_error("TerrariumStore open failed; persistence disabled")
 
 	world_seed = int(config["world"]["seed"])
 	world_size = int(config["world"]["size"])
@@ -76,6 +82,10 @@ func _ready() -> void:
 	add_child(ollama)
 	ollama.configure(config["llm"])
 	print("[LLM] provider=%s" % provider)
+	# 実行中 run 開始(最初の tick が走る前に run 行を作る)
+	if run_logger != null and current_terrarium_id >= 0:
+		var model_id: String = _current_model_id()
+		run_logger.start_run(current_terrarium_id, provider, model_id)
 	ollama.health_changed.connect(_on_health_changed)
 	ollama.batch_progress.connect(_on_decide_progress)
 	ollama.agent_decided.connect(_on_agent_decided_incremental)
@@ -313,6 +323,8 @@ func _on_reset_pressed() -> void:
 	total_input_tokens = 0
 	total_output_tokens = 0
 	total_cost_usd = 0.0
+	# 前 run を終了させ、新しい run 行を開始(reset = 別実験)
+	_end_current_run()
 	_update_cost_label()
 	var pause := get_node_or_null(^"UI/StatusBar/SpeedGroup/Pause") as Button
 	if pause != null:
@@ -327,6 +339,25 @@ func _on_reset_pressed() -> void:
 		list_body.text = _format_agent_list()
 	_update_speech_log_ui()
 	_update_chronicle_ui()
+	# 新しい run を開始
+	if run_logger != null and current_terrarium_id >= 0:
+		var p: String = str(config["llm"].get("provider", "ollama")).to_lower()
+		run_logger.start_run(current_terrarium_id, p, _current_model_id())
+
+func _end_current_run() -> void:
+	if run_logger == null or scheduler == null:
+		return
+	var alive_count: int = 0
+	for a in agents:
+		if a.is_alive():
+			alive_count += 1
+	run_logger.end_run(scheduler.tick, alive_count, agents.size(), total_input_tokens, total_output_tokens, total_cost_usd)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
+		_end_current_run()
+		if run_logger != null:
+			run_logger.close()
 
 func _on_phase_changed(phase_name: String) -> void:
 	current_phase_name = phase_name
@@ -1001,7 +1032,13 @@ func _populate_ui(cfg: Dictionary) -> void:
 
 	var seed_label := get_node_or_null(^"UI/FooterBar/SeedStatus") as Label
 	if seed_label != null:
-		seed_label.text = "OBSERVER MODE  ·  seed 0x%08X" % world_seed
+		var parts: Array[String] = []
+		if run_logger != null and run_logger.current_terrarium_title != "":
+			parts.append("t:%s" % run_logger.current_terrarium_title)
+		if run_logger != null and run_logger.current_run_id >= 0:
+			parts.append("r%d" % run_logger.current_run_id)
+		parts.append("seed 0x%08X" % world_seed)
+		seed_label.text = "  ·  ".join(parts)
 
 	var model_label := get_node_or_null(^"UI/FooterBar/ModelStatus") as Label
 	if model_label != null:
