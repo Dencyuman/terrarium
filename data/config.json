@@ -31,6 +31,7 @@
     "_comment": "hunger は tick 基礎代謝 + 各アクションの追加コスト、health は飢餓ダメージ / attack ダメージ、stamina は活動コスト / wait で回復。",
     "tick_base_hunger": 1,
     "move_hunger": 2,
+    "rock_move_hunger": 4,
     "speak_hunger": 1,
     "eat_hunger_restore": 25,
     "attack_health_damage": 15,

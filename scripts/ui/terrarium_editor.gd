@@ -17,6 +17,21 @@ var cast_data: Array = []           # Array[Dictionary], 各要素 = {name, roma
 # - false なら保存時 terrain_json を空にして seed 生成にフォールバック
 var has_custom_terrain: bool = false
 var _map_canvas = null
+# EnvPanel で編集する環境パラメータ(過酷さ)。config 由来の既定値から始まり、
+# ユーザーが変更したら base_config にマージして保存される。
+const ENV_SPECS := [
+	# [path, label, suffix, min, max, step, hint]
+	[["costs", "eat_hunger_restore"],        "食料1回の回復量",      "", 1.0, 100.0, 1.0,      "大きいほど楽"],
+	[["costs", "tick_base_hunger"],          "tick あたり基礎代謝",  "", 0.0, 10.0, 1.0,       "大きいほど過酷"],
+	[["costs", "starving_health_drain"],     "飢餓時 HP ドレイン",    "", 0.0, 50.0, 1.0,       "大きいほど過酷"],
+	[["costs", "move_hunger"],               "move の hunger コスト(草/森)","", 0.0, 10.0, 1.0,   "大きいほど過酷"],
+	[["costs", "rock_move_hunger"],          "move の hunger コスト(岩)","",    0.0, 20.0, 1.0,   "岩上の移動コスト。草/森より高いのが想定"],
+	[["resources", "initial_spawn", "grass"],  "草地 食料スポーン率", "", 0.0, 1.0, 0.01,     "0..1"],
+	[["resources", "initial_spawn", "forest"], "森 食料スポーン率",   "", 0.0, 1.0, 0.01,     "0..1 (草地より高いのが想定)"],
+	[["resources", "regen_per_tick", "grass"], "草地 食料再生/tick",  "", 0.0, 0.1, 0.001,    "0..0.1"],
+	[["resources", "regen_per_tick", "forest"],"森 食料再生/tick",    "", 0.0, 0.1, 0.001,    "0..0.1 (草地より高いのが想定)"],
+]
+var _env_fields: Dictionary = {}   # path_key("a.b.c") -> SpinBox
 
 func _ready() -> void:
 	randomize()
@@ -39,6 +54,7 @@ func _ready() -> void:
 	var size_field := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
 	if size_field != null:
 		size_field.value_changed.connect(_on_size_changed)
+	_build_env_panel()
 
 	terrarium_id = GameContext.selected_terrarium_id if GameContext else -1
 	if terrarium_id > 0 and store != null:
@@ -84,6 +100,7 @@ func _load_existing(id: int) -> void:
 		if parsed is Array and _map_canvas != null:
 			_map_canvas.set_terrain(parsed)
 			has_custom_terrain = true
+	_refresh_env_panel_values()
 	_update_constraint_label()
 
 func _load_template() -> void:
@@ -112,6 +129,7 @@ func _load_template() -> void:
 	(get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox).value = float(template_size)
 	if _map_canvas != null:
 		_map_canvas.set_grid_size(template_size)
+	_refresh_env_panel_values()
 	_update_constraint_label()
 
 func _apply_readonly_if_needed() -> void:
@@ -163,6 +181,30 @@ func _on_palette_pressed(idx: int, names: Array) -> void:
 		var b := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
 		if b != null:
 			b.button_pressed = (i == idx)
+	_update_terrain_info(idx)
+
+# 選択中テレインの物理的な性質をラベルに反映。config 値を読んで具体数値を表示する。
+func _update_terrain_info(idx: int) -> void:
+	var info := get_node_or_null(^"UI/MapPanel/TerrainInfo") as Label
+	if info == null:
+		return
+	var spawn_grass: float = float(_get_nested(base_config, ["resources", "initial_spawn", "grass"], 0.06))
+	var spawn_forest: float = float(_get_nested(base_config, ["resources", "initial_spawn", "forest"], 0.12))
+	var regen_grass: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "grass"], 0.003))
+	var regen_forest: float = float(_get_nested(base_config, ["resources", "regen_per_tick", "forest"], 0.008))
+	var move_hunger: int = int(_get_nested(base_config, ["costs", "move_hunger"], 2))
+	var rock_hunger: int = int(_get_nested(base_config, ["costs", "rock_move_hunger"], 4))
+	match idx:
+		0:
+			info.text = "草 (grass): move hunger -%d / 食料 spawn %.2f・regen %.3f/tick / 通行可" % [move_hunger, spawn_grass, regen_grass]
+		1:
+			info.text = "水 (water): 通行不可(move は impassable で silent fail)。食料は発生しない。"
+		2:
+			info.text = "森 (forest): move hunger -%d / 食料 spawn %.2f・regen %.3f/tick / 通行可(草より食料豊富)" % [move_hunger, spawn_forest, regen_forest]
+		3:
+			info.text = "岩 (rock): move hunger -%d(草/森より高い)/ 食料は発生しない / 通行可" % [rock_hunger]
+		_:
+			info.text = ""
 
 func _wire_fill_row() -> void:
 	var g := get_node_or_null(^"UI/MapPanel/FillRow/FillGrass") as Button
@@ -193,6 +235,81 @@ func _on_gen_from_seed_pressed() -> void:
 
 func _on_tile_painted(_x: int, _y: int) -> void:
 	has_custom_terrain = true
+
+# --- env panel ---
+
+func _build_env_panel() -> void:
+	var grid := get_node_or_null(^"UI/EnvPanel/Grid") as GridContainer
+	if grid == null:
+		return
+	for child in grid.get_children():
+		child.queue_free()
+	for spec in ENV_SPECS:
+		var path: Array = spec[0]
+		var label_text: String = spec[1]
+		var minv: float = spec[3]
+		var maxv: float = spec[4]
+		var step: float = spec[5]
+		var hint: String = spec[6]
+		var lbl := Label.new()
+		lbl.text = label_text
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.add_theme_color_override("font_color", Color(0.820, 0.808, 0.784, 1))
+		lbl.custom_minimum_size = Vector2(160, 28)
+		grid.add_child(lbl)
+		var spin := SpinBox.new()
+		spin.min_value = minv
+		spin.max_value = maxv
+		spin.step = step
+		spin.value = float(_get_nested(base_config, path, minv))
+		spin.custom_minimum_size = Vector2(120, 28)
+		spin.editable = editable
+		var key := _path_key(path)
+		_env_fields[key] = spin
+		spin.value_changed.connect(func(v): _set_nested(base_config, path, v))
+		grid.add_child(spin)
+		# hint は 2 列目(label pair 内)だが GridContainer 4 列構成なので 3, 4 列目にヒント用空 Label(省略可)
+		if hint != "":
+			var hint_lbl := Label.new()
+			hint_lbl.text = hint
+			hint_lbl.add_theme_font_size_override("font_size", 9)
+			hint_lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
+			hint_lbl.custom_minimum_size = Vector2(160, 28)
+			grid.add_child(hint_lbl)
+		else:
+			grid.add_child(Control.new())
+		grid.add_child(Control.new())  # 4 列目の spacer
+
+func _refresh_env_panel_values() -> void:
+	# base_config が外部から差し替えられた場合(既存テラリウムをロード等)に呼ぶ。
+	for spec in ENV_SPECS:
+		var path: Array = spec[0]
+		var key := _path_key(path)
+		var spin: SpinBox = _env_fields.get(key, null)
+		if spin == null:
+			continue
+		var default_min: float = float(spec[3])
+		spin.value = float(_get_nested(base_config, path, default_min))
+
+func _get_nested(d: Dictionary, path: Array, default_val) -> Variant:
+	var cur: Variant = d
+	for k in path:
+		if not (cur is Dictionary) or not cur.has(k):
+			return default_val
+		cur = cur[k]
+	return cur
+
+func _set_nested(d: Dictionary, path: Array, v) -> void:
+	var cur: Dictionary = d
+	for i in range(path.size() - 1):
+		var k = path[i]
+		if not cur.has(k) or not (cur[k] is Dictionary):
+			cur[k] = {}
+		cur = cur[k]
+	cur[path[-1]] = v
+
+func _path_key(path: Array) -> String:
+	return ".".join(path)
 
 # --- size / constraint ---
 
@@ -258,7 +375,7 @@ func _rebuild_cast_list() -> void:
 func _make_cast_row(idx: int) -> Control:
 	var a: Dictionary = cast_data[idx]
 	var row := Panel.new()
-	row.custom_minimum_size = Vector2(1280, 60)
+	row.custom_minimum_size = Vector2(720, 60)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.137, 0.153, 0.184, 1)
 	sb.border_width_left = 1
@@ -276,15 +393,15 @@ func _make_cast_row(idx: int) -> Control:
 	idx_lbl.text = "%02d" % (idx + 1)
 	idx_lbl.add_theme_font_size_override("font_size", 11)
 	idx_lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
-	idx_lbl.position = Vector2(10, 20)
-	idx_lbl.size = Vector2(28, 20)
+	idx_lbl.position = Vector2(8, 20)
+	idx_lbl.size = Vector2(22, 20)
 	row.add_child(idx_lbl)
 
 	var name_field := LineEdit.new()
 	name_field.text = str(a.get("name", ""))
 	name_field.placeholder_text = "名前"
-	name_field.position = Vector2(44, 16)
-	name_field.size = Vector2(100, 28)
+	name_field.position = Vector2(34, 16)
+	name_field.size = Vector2(76, 28)
 	name_field.editable = editable
 	name_field.text_changed.connect(func(t): cast_data[idx]["name"] = t)
 	row.add_child(name_field)
@@ -292,8 +409,8 @@ func _make_cast_row(idx: int) -> Control:
 	var romaji_field := LineEdit.new()
 	romaji_field.text = str(a.get("romaji", ""))
 	romaji_field.placeholder_text = "romaji"
-	romaji_field.position = Vector2(152, 16)
-	romaji_field.size = Vector2(120, 28)
+	romaji_field.position = Vector2(114, 16)
+	romaji_field.size = Vector2(86, 28)
 	romaji_field.editable = editable
 	romaji_field.text_changed.connect(func(t): cast_data[idx]["romaji"] = t)
 	row.add_child(romaji_field)
@@ -302,41 +419,42 @@ func _make_cast_row(idx: int) -> Control:
 	gender_opt.add_item("女 ♀", 0)
 	gender_opt.add_item("男 ♂", 1)
 	gender_opt.selected = 0 if str(a.get("gender", "female")) == "female" else 1
-	gender_opt.position = Vector2(280, 16)
-	gender_opt.size = Vector2(80, 28)
+	gender_opt.position = Vector2(204, 16)
+	gender_opt.size = Vector2(66, 28)
 	gender_opt.disabled = not editable
 	gender_opt.item_selected.connect(func(i): cast_data[idx]["gender"] = ("female" if i == 0 else "male"))
 	row.add_child(gender_opt)
 
-	_add_slider(row, idx, "cooperative", "協調", int(a.get("cooperative", 50)), 370)
-	_add_slider(row, idx, "aggressive",  "攻撃", int(a.get("aggressive",  50)), 620)
-	_add_slider(row, idx, "curious",     "好奇", int(a.get("curious",     50)), 870)
+	var slider_w: int = 112
+	_add_slider(row, idx, "cooperative", "協調", int(a.get("cooperative", 50)), 278, slider_w)
+	_add_slider(row, idx, "aggressive",  "攻撃", int(a.get("aggressive",  50)), 402, slider_w)
+	_add_slider(row, idx, "curious",     "好奇", int(a.get("curious",     50)), 526, slider_w)
 
 	var del_btn := Button.new()
 	del_btn.text = "✕"
 	del_btn.tooltip_text = "削除"
-	del_btn.position = Vector2(1210, 16)
-	del_btn.size = Vector2(40, 28)
+	del_btn.position = Vector2(660, 16)
+	del_btn.size = Vector2(38, 28)
 	del_btn.disabled = not editable
 	del_btn.pressed.connect(_on_delete_cast.bind(idx))
 	row.add_child(del_btn)
 	return row
 
-func _add_slider(parent: Control, cast_idx: int, key: String, label: String, value: int, x: int) -> void:
+func _add_slider(parent: Control, cast_idx: int, key: String, label: String, value: int, x: int, w: int = 112) -> void:
 	var lbl := Label.new()
 	lbl.text = label
 	lbl.add_theme_font_size_override("font_size", 10)
 	lbl.add_theme_color_override("font_color", Color(0.541, 0.525, 0.502, 1))
 	lbl.position = Vector2(x, 6)
-	lbl.size = Vector2(40, 16)
+	lbl.size = Vector2(30, 16)
 	parent.add_child(lbl)
 
 	var val_lbl := Label.new()
 	val_lbl.text = str(value)
 	val_lbl.add_theme_font_size_override("font_size", 11)
 	val_lbl.add_theme_color_override("font_color", Color(0.820, 0.808, 0.784, 1))
-	val_lbl.position = Vector2(x + 180, 6)
-	val_lbl.size = Vector2(40, 16)
+	val_lbl.position = Vector2(x + w - 28, 6)
+	val_lbl.size = Vector2(28, 16)
 	parent.add_child(val_lbl)
 
 	var slider := HSlider.new()
@@ -345,7 +463,7 @@ func _add_slider(parent: Control, cast_idx: int, key: String, label: String, val
 	slider.step = 1
 	slider.value = value
 	slider.position = Vector2(x, 26)
-	slider.size = Vector2(220, 22)
+	slider.size = Vector2(w, 22)
 	slider.editable = editable
 	slider.value_changed.connect(func(v):
 		cast_data[cast_idx][key] = int(v)

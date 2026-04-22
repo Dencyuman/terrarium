@@ -46,8 +46,13 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - The actions are executed in the exact order you list them. Anything that cannot physically happen at execution time (e.g. move into water, take a tile with no food, give to an agent out of vision, eat when no food available) silently fails and the remaining actions continue.
 
 # World physics
-- Coordinates: x grows east, y grows south. (0,0) is the NW corner. The world is a finite **20 × 20** square: valid positions are x ∈ [0,19], y ∈ [0,19]. Past those indices is nothing — you cannot step there (`move` fails with `out_of_bounds`).
-- Water tiles are impassable. You cannot enter a tile already occupied by another living agent.
+- Coordinates: x grows east, y grows south. (0,0) is the NW corner. The world is a finite square grid (edit-time dimension); past valid indices is nothing — `move` there fails with `out_of_bounds`.
+- Terrain types (`you.terrain` / `vision[i].terrain`):
+    - `grass`: traversable, normal move cost, food can spawn.
+    - `forest`: traversable, normal move cost, food spawns more often than grass.
+    - `rock`: traversable but moving onto it drains more hunger (harsh ground), and food never spawns.
+    - `water`: impassable; `move` fails with `impassable`. Food never spawns.
+- You cannot enter a tile already occupied by another living agent.
 - `hunger` ranges 0–100 (starts at 80). `health` ranges 0–100 (starts at 100). Each tick your `hunger` decreases. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
 - `stamina` ranges 0–100 (starts full). Every active action costs stamina: move (-2), take (-1), speak (-2), give (-2), embrace (-5, but the one embraced gains +3), attack (-12; the target also loses -3 from struggling). `eat` is free. `wait` restores stamina (+10). When stamina is below an action's cost, that action silently fails — you must rest (`wait`) to recover. Stamina and hunger are independent: you can be well-fed but exhausted, or rested but starving.
 - `inventory` is a list of items you are carrying. Its capacity is limited.

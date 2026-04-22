@@ -185,9 +185,43 @@ theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "制約: マップサイズ² ≥ エージェント数 × 4"
 
-[node name="CastPanel" type="Panel" parent="UI"]
+[node name="EnvPanel" type="Panel" parent="UI"]
 offset_left = 48.0
 offset_top = 340.0
+offset_right = 820.0
+offset_bottom = 540.0
+theme_override_styles/panel = SubResource("Sb_panel")
+
+[node name="Header" type="Label" parent="UI/EnvPanel"]
+offset_left = 16.0
+offset_top = 10.0
+offset_right = 400.0
+offset_bottom = 32.0
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
+text = "環境パラメータ(過酷さ)"
+
+[node name="Sub" type="Label" parent="UI/EnvPanel"]
+offset_left = 16.0
+offset_top = 32.0
+offset_right = 750.0
+offset_bottom = 52.0
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
+text = "data/config.json の既定値を雛形にテラリウムごとに上書きできる。"
+
+[node name="Grid" type="GridContainer" parent="UI/EnvPanel"]
+offset_left = 16.0
+offset_top = 60.0
+offset_right = 750.0
+offset_bottom = 188.0
+columns = 4
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 6
+
+[node name="CastPanel" type="Panel" parent="UI"]
+offset_left = 48.0
+offset_top = 560.0
 offset_right = 820.0
 offset_bottom = 820.0
 theme_override_styles/panel = SubResource("Sb_panel")
@@ -222,11 +256,11 @@ text = "＋ 追加"
 offset_left = 12.0
 offset_top = 56.0
 offset_right = 760.0
-offset_bottom = 468.0
+offset_bottom = 248.0
 horizontal_scroll_mode = 0
 
 [node name="CastList" type="VBoxContainer" parent="UI/CastPanel/CastScroll"]
-custom_minimum_size = Vector2(740, 0)
+custom_minimum_size = Vector2(720, 0)
 theme_override_constants/separation = 6
 
 [node name="MapPanel" type="Panel" parent="UI"]
@@ -286,19 +320,29 @@ toggle_mode = true
 theme_override_font_sizes/font_size = 11
 text = "■ 岩"
 
+[node name="TerrainInfo" type="Label" parent="UI/MapPanel"]
+offset_left = 16.0
+offset_top = 104.0
+offset_right = 540.0
+offset_bottom = 144.0
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.820, 0.808, 0.784, 1)
+autowrap_mode = 2
+text = "草 (grass): move 通常 / 食料発生率 config 通り / 通行可"
+
 [node name="MapCanvas" type="Control" parent="UI/MapPanel"]
 offset_left = 68.0
-offset_top = 120.0
+offset_top = 150.0
 offset_right = 468.0
-offset_bottom = 520.0
+offset_bottom = 550.0
 mouse_filter = 1
 script = ExtResource("2_mc")
 
 [node name="FillRow" type="HBoxContainer" parent="UI/MapPanel"]
 offset_left = 16.0
-offset_top = 540.0
+offset_top = 570.0
 offset_right = 540.0
-offset_bottom = 576.0
+offset_bottom = 606.0
 theme_override_constants/separation = 6
 
 [node name="FillGrass" type="Button" parent="UI/MapPanel/FillRow"]
@@ -323,13 +367,13 @@ text = "マップ指定をクリア"
 
 [node name="Hint" type="Label" parent="UI/MapPanel"]
 offset_left = 16.0
-offset_top = 590.0
+offset_top = 620.0
 offset_right = 540.0
 offset_bottom = 700.0
 theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
-text = "マップ指定なし(クリア状態)の場合は保存時 terrain_json が空になり、Sim 起動時に seed から Perlin 生成される。1 マスでも塗ると terrain_json に全 20×20 が保存される。"
+text = "マップ指定なし(クリア状態)の場合は保存時 terrain_json が空になり、Sim 起動時に seed から Perlin 生成される。1 マスでも塗ると terrain_json に N×N が保存される。"
 
 [node name="StatusLabel" type="Label" parent="UI"]
 offset_left = 48.0
