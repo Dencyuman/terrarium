@@ -37,7 +37,7 @@ var ping_retry_timer: Timer
 var pending_decisions: Dictionary = {}
 
 func _ready() -> void:
-	config = _load_json("res://data/config.json")
+	config = _load_config()
 	var names_data: Dictionary = _load_json("res://data/names.json")
 
 	world_seed = int(config["world"]["seed"])
@@ -732,6 +732,28 @@ func _load_json(path: String) -> Variant:
 	var text: String = f.get_as_text()
 	f.close()
 	return JSON.parse_string(text)
+
+# config.json を base として読み込み、config.local.json があれば deep merge する。
+# 手元の実験用 override をここで上書きでき、tracked な config.json を汚さない。
+func _load_config() -> Dictionary:
+	var base: Variant = _load_json("res://data/config.json")
+	if not (base is Dictionary):
+		return {}
+	var local_path := "res://data/config.local.json"
+	if FileAccess.file_exists(local_path):
+		var local: Variant = _load_json(local_path)
+		if local is Dictionary:
+			_deep_merge_dict(base, local)
+			print("[Config] config.local.json を merge")
+	return base
+
+func _deep_merge_dict(dst: Dictionary, src: Dictionary) -> void:
+	for key in src.keys():
+		var src_val: Variant = src[key]
+		if src_val is Dictionary and dst.has(key) and dst[key] is Dictionary:
+			_deep_merge_dict(dst[key], src_val)
+		else:
+			dst[key] = src_val
 
 func _populate_ui(cfg: Dictionary) -> void:
 	var agent_header := get_node_or_null(^"UI/AgentListPanel/Header") as Label
