@@ -192,9 +192,11 @@ func commit(decisions: Array) -> void:
 func apply_bundle_for_agent(agent: Agent, bundle: Array) -> void:
 	if not agent.is_alive():
 		return
+	# 移動の占有判定は「生存中の agent」のみ。死体(遺体)はタイルをブロックしない
+	# = 他のエージェントが跨いで通過できる。prompt 側も "living agent" と明記済み。
 	var occupied: Dictionary = {}
 	for a in agents:
-		if a.id != agent.id:
+		if a.id != agent.id and a.is_alive():
 			occupied[a.grid_pos] = a.id
 	var ordered := sanitize_bundle(bundle)
 	var primary_reason: String = ""
