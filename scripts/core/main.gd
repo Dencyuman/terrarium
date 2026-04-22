@@ -457,6 +457,8 @@ func _serialize_agent(a: Agent) -> Dictionary:
 		"scouted_tiles": a.scouted_tiles.duplicate(true),
 		"age_days": a.age_days,
 		"parent_ids": a.parent_ids.duplicate(),
+		"libido": a.libido,
+		"aggression_pressure": a.aggression_pressure,
 	}
 
 func _apply_state_snapshot(snap: Dictionary) -> void:
@@ -535,6 +537,8 @@ func _deserialize_agent_state(a: Agent, dump: Dictionary) -> void:
 	if parents is Array:
 		for p in parents:
 			a.parent_ids.append(int(p))
+	a.libido = int(dump.get("libido", a.libido))
+	a.aggression_pressure = int(dump.get("aggression_pressure", a.aggression_pressure))
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:

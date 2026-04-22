@@ -54,7 +54,21 @@
     "elder_health_drain": 2,
     "reproduce_stamina_cost": 20,
     "reproduce_hunger_cost": 10,
-    "reproduce_success_prob": 0.5
+    "reproduce_success_prob": 0.5,
+    "puberty_age_days": 2,
+    "libido_initial": 20,
+    "libido_gain_per_tick": 5,
+    "libido_fail_penalty": 10,
+    "aggr_starving_gain": 4,
+    "aggr_on_attacked": 40,
+    "aggr_on_witness_attack": 15,
+    "aggr_on_witness_death": 20,
+    "aggr_discharge_on_attack": 40,
+    "aggr_decay_on_wait": 2,
+    "aggr_on_embrace_received": 15,
+    "aggr_on_eat": 15,
+    "aggr_on_give": 5,
+    "aggr_on_speak": 3
   },
   "resources": {
     "_comment": "食料スポーン率(確率、地形別)。grass/forest のみ食料が出る。",

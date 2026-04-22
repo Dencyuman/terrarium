@@ -77,6 +77,23 @@ var elder_health_drain: int = 2  # 老衰時の 1 tick あたり health 減少
 var reproduce_stamina_cost: int = 20
 var reproduce_hunger_cost: int = 10
 var reproduce_success_prob: float = 0.5
+# Phase 5.E 内的衝動: libido(性欲)
+var puberty_age_days: int = 2            # この age 以降 libido が蓄積し始める(第二次性徴)
+var libido_initial: int = 20             # puberty 到達時の初期値
+var libido_gain_per_tick: int = 5        # puberty 後の自然蓄積
+var libido_fail_penalty: int = 10        # reproduce 失敗時の減衰(2 tick 分)
+# Phase 5.E 内的衝動: aggression_pressure(攻撃衝動)
+var aggr_starving_gain: int = 4          # hunger == 0 時の蓄積
+var aggr_on_attacked: int = 40           # 自分が被攻撃時の即時加算
+var aggr_on_witness_attack: int = 15     # 攻撃目撃時の加算
+var aggr_on_witness_death: int = 20      # 死亡目撃時の加算
+var aggr_discharge_on_attack: int = 40   # attack 実行時の減算(発散)
+var aggr_decay_on_wait: int = 2          # wait 時の自然減
+var aggr_on_embrace_received: int = 15   # embrace を受けたときの減算(鎮め)
+# 攻撃以外の発散経路(これが無いと「怒ったらとりあえず攻撃」になる)
+var aggr_on_eat: int = 15                # 食事で満腹 → frustration 解消
+var aggr_on_give: int = 5                # 利他行動による小さな発散
+var aggr_on_speak: int = 3               # 吐露による小さな発散
 
 # tick 内で既に生殖が成立したペア集合(重複妊娠防止)。finalize_tick で clear。
 # key: "min_id|max_id" 形式のソート済みペア文字列。
@@ -152,6 +169,20 @@ func configure_costs(cfg: Dictionary) -> void:
 	reproduce_stamina_cost = int(cfg.get("reproduce_stamina_cost", reproduce_stamina_cost))
 	reproduce_hunger_cost = int(cfg.get("reproduce_hunger_cost", reproduce_hunger_cost))
 	reproduce_success_prob = float(cfg.get("reproduce_success_prob", reproduce_success_prob))
+	puberty_age_days = int(cfg.get("puberty_age_days", puberty_age_days))
+	libido_initial = int(cfg.get("libido_initial", libido_initial))
+	libido_gain_per_tick = int(cfg.get("libido_gain_per_tick", libido_gain_per_tick))
+	libido_fail_penalty = int(cfg.get("libido_fail_penalty", libido_fail_penalty))
+	aggr_starving_gain = int(cfg.get("aggr_starving_gain", aggr_starving_gain))
+	aggr_on_attacked = int(cfg.get("aggr_on_attacked", aggr_on_attacked))
+	aggr_on_witness_attack = int(cfg.get("aggr_on_witness_attack", aggr_on_witness_attack))
+	aggr_on_witness_death = int(cfg.get("aggr_on_witness_death", aggr_on_witness_death))
+	aggr_discharge_on_attack = int(cfg.get("aggr_discharge_on_attack", aggr_discharge_on_attack))
+	aggr_decay_on_wait = int(cfg.get("aggr_decay_on_wait", aggr_decay_on_wait))
+	aggr_on_embrace_received = int(cfg.get("aggr_on_embrace_received", aggr_on_embrace_received))
+	aggr_on_eat = int(cfg.get("aggr_on_eat", aggr_on_eat))
+	aggr_on_give = int(cfg.get("aggr_on_give", aggr_on_give))
+	aggr_on_speak = int(cfg.get("aggr_on_speak", aggr_on_speak))
 
 func configure_relations(cfg: Dictionary) -> void:
 	rel_affection_per_give = int(cfg.get("affection_per_give", rel_affection_per_give))
@@ -286,6 +317,18 @@ func finalize_tick() -> void:
 		for a in agents:
 			if a.is_alive():
 				a.age_days += 1
+	# 内的衝動の tick ごとの自然変動
+	for a in agents:
+		if not a.is_alive():
+			continue
+		# libido: puberty 以降に蓄積。初回 puberty 到達時は底上げ。
+		if a.age_days >= puberty_age_days:
+			if a.libido < libido_initial:
+				a.libido = libido_initial
+			a.libido = min(100, a.libido + libido_gain_per_tick)
+		# aggression_pressure: 空腹 0 でフラストレーション蓄積
+		if a.hunger == 0:
+			a.aggression_pressure = min(100, a.aggression_pressure + aggr_starving_gain)
 	# 生殖ペアの tick-local 記録をクリア(次 tick で持ち越さない)
 	reproduce_paired_this_tick.clear()
 	phase = Phase.IDLE
@@ -373,8 +416,9 @@ func _random_passable_dir(pos: Vector2i) -> Vector2i:
 func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 	match action.kind:
 		Action.Kind.WAIT:
-			# 休息。stamina を回復(max を超えない)。
+			# 休息。stamina を回復(max を超えない)。攻撃衝動も自然減。
 			agent.gain_stamina(wait_stamina_restore)
+			agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_decay_on_wait)
 			action.succeeded = true
 			return
 		Action.Kind.TAKE:
@@ -406,12 +450,14 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			if agent.inventory_remove_first("food"):
 				agent.eat_amount(eat_hunger_restore)
 				agent.spend_stamina(eat_stamina)
+				agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_on_eat)
 				action.succeeded = true
 			else:
 				var nut: int = resources.take(agent.grid_pos.x, agent.grid_pos.y)
 				if nut > 0:
 					agent.eat_amount(nut)
 					agent.spend_stamina(eat_stamina)
+					agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_on_eat)
 					action.succeeded = true
 				else:
 					action.failure_note = "no_food_available"
@@ -482,6 +528,7 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 				return
 			agent.hunger = max(0, agent.hunger - speak_hunger)
 			agent.spend_stamina(speak_stamina)
+			agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_on_speak)
 			_propagate_speech(agent, action)
 			action.succeeded = true
 		Action.Kind.LOOK:
@@ -591,6 +638,8 @@ func _emit_death(victim: Agent, cause: String, killer: Agent) -> void:
 		else:
 			life_text = "%s が倒れるのを見た" % victim.agent_name
 		witness.append_life_event(tick, life_text)
+		# 死亡目撃は攻撃衝動を跳ね上げる(ショック / 報復心理)
+		witness.aggression_pressure = min(100, witness.aggression_pressure + aggr_on_witness_death)
 
 func _apply_give(agent: Agent, action: Action) -> void:
 	var target := _get_agent_by_id(action.target_id)
@@ -620,6 +669,8 @@ func _apply_give(agent: Agent, action: Action) -> void:
 	target.append_interaction(agent.id, tick, "%s から食料を受け取った" % agent.agent_name)
 	agent.append_life_event(tick, "私が %s に食料を渡した" % target.agent_name)
 	target.append_life_event(tick, "%s から食料を受け取った" % agent.agent_name)
+	# 利他行動による小さな攻撃衝動の発散(施す側のみ)
+	agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_on_give)
 	action.succeeded = true
 	_emit_event({
 		"tick": tick,
@@ -650,6 +701,9 @@ func _apply_attack(agent: Agent, action: Action) -> void:
 	target.append_interaction(agent.id, tick, "%s に攻撃された" % agent.agent_name)
 	agent.append_life_event(tick, "私が %s を攻撃した" % target.agent_name)
 	target.append_life_event(tick, "%s に攻撃された" % agent.agent_name)
+	# 攻撃衝動: 加害者は発散、被害者は急上昇
+	agent.aggression_pressure = max(0, agent.aggression_pressure - aggr_discharge_on_attack)
+	target.aggression_pressure = min(100, target.aggression_pressure + aggr_on_attacked)
 	_emit_event({
 		"tick": tick,
 		"kind": "attack",
@@ -670,6 +724,7 @@ func _apply_attack(agent: Agent, action: Action) -> void:
 			continue
 		witness.append_interaction(agent.id, tick, "%s が %s を攻撃するのを見た" % [agent.agent_name, target.agent_name])
 		witness.append_life_event(tick, "%s が %s を攻撃するのを見た" % [agent.agent_name, target.agent_name])
+		witness.aggression_pressure = min(100, witness.aggression_pressure + aggr_on_witness_attack)
 	# 致死判定
 	if pre_health > 0 and target.health <= 0:
 		_emit_death(target, "attack", agent)
@@ -711,6 +766,8 @@ func _apply_embrace(agent: Agent, action: Action) -> void:
 	# 非対称コスト: する側 -5, される側 +3(癒される)
 	agent.spend_stamina(embrace_stamina_cost)
 	target.gain_stamina(embrace_stamina_gift)
+	# 受け手側の攻撃衝動を鎮める(鎮痛作用)
+	target.aggression_pressure = max(0, target.aggression_pressure - aggr_on_embrace_received)
 	target.adjust_relation(agent.id, rel_affection_per_embrace, rel_trust_per_embrace, tick)
 	agent.adjust_relation(target.id, rel_affection_per_embrace, rel_trust_per_embrace, tick)
 	agent.append_interaction(target.id, tick, "私が %s を抱擁した" % target.agent_name)
@@ -821,6 +878,8 @@ func _apply_reproduce_with(agent: Agent, action: Action) -> void:
 	if rng.randf() > reproduce_success_prob:
 		action.succeeded = true
 		action.failure_note = "infertile"
+		# 失敗: initiator の libido のみ小さく減衰(衝動は残る)
+		agent.libido = max(0, agent.libido - libido_fail_penalty)
 		agent.append_life_event(tick, "%s と交わったが子は宿らなかった" % target.agent_name)
 		target.append_life_event(tick, "%s と交わったが子は宿らなかった" % agent.agent_name)
 		_emit_event({
@@ -839,12 +898,18 @@ func _apply_reproduce_with(agent: Agent, action: Action) -> void:
 	if birth_pos.x < 0:
 		action.succeeded = true
 		action.failure_note = "no_space_for_birth"
+		# 交合は成立したので両者の libido はリセット
+		agent.libido = 0
+		target.libido = 0
 		agent.append_life_event(tick, "%s と結ばれたが子の居場所が無かった" % target.agent_name)
 		target.append_life_event(tick, "%s と結ばれたが子の居場所が無かった" % agent.agent_name)
 		return
 	var child := _spawn_child(agent, target, birth_pos)
 	agents.append(child)
 	action.succeeded = true
+	# 出産成功: 両親とも libido リセット
+	agent.libido = 0
+	target.libido = 0
 	_emit_event({
 		"tick": tick,
 		"kind": "birth",

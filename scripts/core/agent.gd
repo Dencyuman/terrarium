@@ -25,6 +25,10 @@ var stamina: int = STAMINA_INITIAL
 var age_days: int = 0
 # 親系譜(Phase 5 の reproduce_with で設定される)
 var parent_ids: Array[int] = []
+# 内的衝動(Phase 5.E)。hunger/stamina と同じく身体化された圧として扱う。
+# 閾値を超えると行動動機が生まれる。discharge 行動で減衰する。
+var libido: int = 0                   # 性欲。puberty 後に蓄積、reproduce_with で解消
+var aggression_pressure: int = 0      # 攻撃衝動。飢餓や被攻撃で蓄積、attack で解消
 
 # 所持品(v0.1 は食料のみ扱う。文字列 "food" をスロット占有の単位とする)
 var inventory: Array[String] = []

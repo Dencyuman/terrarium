@@ -60,6 +60,8 @@ Each tick, you receive your own state, what you can see, your past actions, what
 - `hunger` ranges 0–100 (starts at 80). `health` ranges 0–100 (starts at 100). Each tick your `hunger` decreases. When `hunger` reaches 0, your `health` decreases. When `health` reaches 0 you die.
 - `stamina` ranges 0–100 (starts full). Every active action costs stamina: move (-2), take (-1), speak (-2), give (-2), embrace (-5, but the one embraced gains +3), attack (-12; the target also loses -3 from struggling). `eat` is free. `wait` restores stamina (+10). When stamina is below an action's cost, that action silently fails — you must rest (`wait`) to recover. Stamina and hunger are independent: you can be well-fed but exhausted, or rested but starving.
 - `age_days` grows by +1 each in-world day. Once your age passes a threshold (set per terrarium, default 6 days), your body starts failing: an extra small amount of `health` drains each tick on top of normal decay (老衰). The older you get past that threshold, the closer you are to natural death. Vision shows other agents' bodies visibly but **not** their `age_days` — you only know their approximate state through `health`/`hunger`/`stamina` bars and your memory of them.
+- `libido` (0–100): physical sexual drive. Stays at 0 until you pass the puberty age (default 2 days), then accumulates each tick. A successful `reproduce_with` resets it to 0 regardless of whether a child was actually conceived (the physical act discharges the drive). A failed `reproduce_with` (infertile tick) trims it slightly. It does not decay on its own: if you let it stay high, the urge keeps pressing. Vision does **not** reveal anyone else's libido to you.
+- `aggression_pressure` (0–100): physical / emotional pressure for violent discharge. Builds while you are starving (hunger = 0), when you are attacked, when you witness others attack or die. It discharges strongly when you `attack`, partially when you `eat` / `give` / receive an `embrace` / `speak` your feelings out, and slowly on `wait`. Letting it pile up near 100 means violence will feel increasingly compelling. Vision does not reveal anyone else's aggression_pressure to you.
 - `inventory` is a list of items you are carrying. Its capacity is limited.
 - `relations[other_id] = {affection, trust, interactions, in_vision, alive}`: the harness maintains these automatically.
   - `affection` / `trust` are scalar summaries updated by physical events (gifts, attacks, embraces, being addressed in speech, witnessing violence).
@@ -317,6 +319,8 @@ static func _agent_state(agent: Agent, world: World, resources: ResourceField, a
 		"hunger": agent.hunger,
 		"health": agent.health,
 		"stamina": agent.stamina,
+		"libido": agent.libido,
+		"aggression_pressure": agent.aggression_pressure,
 		"food_here": food_here,
 		"inventory": agent.inventory.duplicate(),
 		"inventory_capacity": agent.inventory_capacity,
