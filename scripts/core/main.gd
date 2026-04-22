@@ -1429,17 +1429,19 @@ func _update_agent_detail() -> void:
 	stats.bbcode_enabled = true
 	stats.fit_content = true
 	stats.scroll_active = false
-	stats.custom_minimum_size = Vector2(236, 72)
+	stats.custom_minimum_size = Vector2(236, 136)
 	stats.add_theme_font_size_override("normal_font_size", 11)
 	if is_dead:
 		stats.text = "[color=%s]最期の状態[/color]\n[color=%s]  空腹度  [/color][color=%s]%d[/color] / 体力 [color=%s]%d[/color] / 元気度 [color=%s]%d[/color]" % [
 			text_dim, text_dim, text_dim, a.hunger, text_dim, a.health, text_dim, a.stamina,
 		]
 	else:
-		stats.text = "[color=#8a8680]空腹度[/color]  %s  [b]%d[/b]/100\n[color=#8a8680]体力  [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]元気度[/color]  %s  [b]%d[/b]/100" % [
+		stats.text = "[color=#8a8680]空腹度[/color]    %s  [b]%d[/b]/100\n[color=#8a8680]体力    [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]元気度[/color]    %s  [b]%d[/b]/100\n[color=#8a8680]性欲    [/color]  %s  [b]%d[/b]/100\n[color=#8a8680]怒り    [/color]  %s  [b]%d[/b]/100" % [
 			_bar(a.hunger, 100, 14), a.hunger,
 			_bar(a.health, 100, 14), a.health,
 			_bar(a.stamina, 100, 14), a.stamina,
+			_bar_colored(a.libido, 100, 14, "#d893b8"), a.libido,
+			_bar_colored(a.aggression_pressure, 100, 14, "#e07070"), a.aggression_pressure,
 		]
 	content.add_child(stats)
 
@@ -1519,9 +1521,12 @@ func _update_agent_detail() -> void:
 		content.add_child(rels_label)
 
 func _bar(value: int, mx: int, width: int) -> String:
+	return _bar_colored(value, mx, width, "#6acfb0")
+
+func _bar_colored(value: int, mx: int, width: int, filled_hex: String) -> String:
 	var filled := int(round(float(value) / float(mx) * float(width)))
 	filled = clamp(filled, 0, width)
-	var bar := "[color=#6acfb0]"
+	var bar := "[color=%s]" % filled_hex
 	for i in filled:
 		bar += "■"
 	bar += "[/color][color=#3a3e46]"
