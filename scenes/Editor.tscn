@@ -29,7 +29,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 1
 
-[node name="TitleLabel" type="Label" parent="UI"]
+[node name="Scroll" type="ScrollContainer" parent="UI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+horizontal_scroll_mode = 0
+
+[node name="Inner" type="Control" parent="UI/Scroll"]
+custom_minimum_size = Vector2(1432, 900)
+
+[node name="TitleLabel" type="Label" parent="UI/Scroll/Inner"]
 offset_left = 48.0
 offset_top = 40.0
 offset_right = 800.0
@@ -38,7 +47,7 @@ theme_override_font_sizes/font_size = 24
 theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
 text = "テラリウムエディタ"
 
-[node name="ReadOnlyBadge" type="Label" parent="UI"]
+[node name="ReadOnlyBadge" type="Label" parent="UI/Scroll/Inner"]
 offset_left = 280.0
 offset_top = 48.0
 offset_right = 500.0
@@ -48,7 +57,7 @@ theme_override_colors/font_color = Color(0.88, 0.72, 0.38, 1)
 visible = false
 text = "(動作済み · 閲覧のみ)"
 
-[node name="BackBtn" type="Button" parent="UI"]
+[node name="BackBtn" type="Button" parent="UI/Scroll/Inner"]
 offset_left = 1280.0
 offset_top = 44.0
 offset_right = 1392.0
@@ -56,7 +65,7 @@ offset_bottom = 80.0
 theme_override_font_sizes/font_size = 13
 text = "← 戻る"
 
-[node name="SaveBtn" type="Button" parent="UI"]
+[node name="SaveBtn" type="Button" parent="UI/Scroll/Inner"]
 offset_left = 1160.0
 offset_top = 44.0
 offset_right = 1272.0
@@ -64,14 +73,14 @@ offset_bottom = 80.0
 theme_override_font_sizes/font_size = 13
 text = "💾 保存"
 
-[node name="MetaPanel" type="Panel" parent="UI"]
+[node name="MetaPanel" type="Panel" parent="UI/Scroll/Inner"]
 offset_left = 48.0
 offset_top = 100.0
 offset_right = 820.0
 offset_bottom = 320.0
 theme_override_styles/panel = SubResource("Sb_panel")
 
-[node name="Header" type="Label" parent="UI/MetaPanel"]
+[node name="Header" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 10.0
 offset_right = 300.0
@@ -80,7 +89,7 @@ theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
 text = "基本情報"
 
-[node name="TitleFieldLbl" type="Label" parent="UI/MetaPanel"]
+[node name="TitleFieldLbl" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 46.0
 offset_right = 100.0
@@ -89,14 +98,14 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "タイトル"
 
-[node name="TitleField" type="LineEdit" parent="UI/MetaPanel"]
+[node name="TitleField" type="LineEdit" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 120.0
 offset_top = 44.0
 offset_right = 620.0
 offset_bottom = 72.0
 theme_override_font_sizes/font_size = 12
 
-[node name="DescFieldLbl" type="Label" parent="UI/MetaPanel"]
+[node name="DescFieldLbl" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 84.0
 offset_right = 100.0
@@ -105,14 +114,14 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "説明"
 
-[node name="DescField" type="LineEdit" parent="UI/MetaPanel"]
+[node name="DescField" type="LineEdit" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 120.0
 offset_top = 82.0
 offset_right = 620.0
 offset_bottom = 110.0
 theme_override_font_sizes/font_size = 12
 
-[node name="SeedLbl" type="Label" parent="UI/MetaPanel"]
+[node name="SeedLbl" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 126.0
 offset_right = 100.0
@@ -121,7 +130,7 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "seed (int)"
 
-[node name="SeedField" type="SpinBox" parent="UI/MetaPanel"]
+[node name="SeedField" type="SpinBox" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 120.0
 offset_top = 122.0
 offset_right = 320.0
@@ -130,7 +139,7 @@ min_value = 0.0
 max_value = 4294967295.0
 step = 1.0
 
-[node name="SeedRandomBtn" type="Button" parent="UI/MetaPanel"]
+[node name="SeedRandomBtn" type="Button" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 332.0
 offset_top = 122.0
 offset_right = 430.0
@@ -138,7 +147,7 @@ offset_bottom = 150.0
 theme_override_font_sizes/font_size = 11
 text = "🎲 ランダム"
 
-[node name="TickPerDayLbl" type="Label" parent="UI/MetaPanel"]
+[node name="TickPerDayLbl" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 164.0
 offset_right = 120.0
@@ -147,7 +156,7 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "tick / day"
 
-[node name="TickPerDayField" type="SpinBox" parent="UI/MetaPanel"]
+[node name="TickPerDayField" type="SpinBox" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 120.0
 offset_top = 160.0
 offset_right = 260.0
@@ -157,7 +166,7 @@ max_value = 100.0
 step = 1.0
 value = 10.0
 
-[node name="SizeLbl" type="Label" parent="UI/MetaPanel"]
+[node name="SizeLbl" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 300.0
 offset_top = 164.0
 offset_right = 420.0
@@ -166,7 +175,7 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "マップサイズ N×N"
 
-[node name="SizeField" type="SpinBox" parent="UI/MetaPanel"]
+[node name="SizeField" type="SpinBox" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 440.0
 offset_top = 160.0
 offset_right = 540.0
@@ -176,7 +185,7 @@ max_value = 20.0
 step = 1.0
 value = 20.0
 
-[node name="ConstraintLabel" type="Label" parent="UI/MetaPanel"]
+[node name="ConstraintLabel" type="Label" parent="UI/Scroll/Inner/MetaPanel"]
 offset_left = 16.0
 offset_top = 198.0
 offset_right = 756.0
@@ -185,14 +194,14 @@ theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "制約: マップサイズ² ≥ エージェント数 × 4"
 
-[node name="EnvPanel" type="Panel" parent="UI"]
+[node name="EnvPanel" type="Panel" parent="UI/Scroll/Inner"]
 offset_left = 48.0
 offset_top = 340.0
 offset_right = 820.0
 offset_bottom = 620.0
 theme_override_styles/panel = SubResource("Sb_panel")
 
-[node name="Header" type="Label" parent="UI/EnvPanel"]
+[node name="Header" type="Label" parent="UI/Scroll/Inner/EnvPanel"]
 offset_left = 24.0
 offset_top = 16.0
 offset_right = 400.0
@@ -201,7 +210,7 @@ theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
 text = "環境パラメータ"
 
-[node name="Sub" type="Label" parent="UI/EnvPanel"]
+[node name="Sub" type="Label" parent="UI/Scroll/Inner/EnvPanel"]
 offset_left = 24.0
 offset_top = 40.0
 offset_right = 748.0
@@ -210,43 +219,49 @@ theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "このテラリウムが過酷か穏やかかを決める。既定値は data/config.json から読み込まれる。"
 
-[node name="Tabs" type="TabContainer" parent="UI/EnvPanel"]
+[node name="Tabs" type="TabContainer" parent="UI/Scroll/Inner/EnvPanel"]
 offset_left = 24.0
 offset_top = 76.0
 offset_right = 748.0
 offset_bottom = 266.0
 tab_alignment = 0
 
-[node name="共通" type="MarginContainer" parent="UI/EnvPanel/Tabs"]
+[node name="共通" type="MarginContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs"]
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 14
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 14
 
-[node name="CommonGrid" type="GridContainer" parent="UI/EnvPanel/Tabs/共通"]
+[node name="CommonScroll" type="ScrollContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs/共通"]
+horizontal_scroll_mode = 0
+
+[node name="CommonGrid" type="GridContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs/共通/CommonScroll"]
 columns = 3
 theme_override_constants/h_separation = 24
 theme_override_constants/v_separation = 10
 
-[node name="地形別" type="MarginContainer" parent="UI/EnvPanel/Tabs"]
+[node name="地形別" type="MarginContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs"]
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 14
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 14
 
-[node name="TerrainGrid" type="GridContainer" parent="UI/EnvPanel/Tabs/地形別"]
+[node name="TerrainScroll" type="ScrollContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs/地形別"]
+horizontal_scroll_mode = 0
+
+[node name="TerrainGrid" type="GridContainer" parent="UI/Scroll/Inner/EnvPanel/Tabs/地形別/TerrainScroll"]
 columns = 5
-theme_override_constants/h_separation = 18
+theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 8
 
-[node name="CastPanel" type="Panel" parent="UI"]
+[node name="CastPanel" type="Panel" parent="UI/Scroll/Inner"]
 offset_left = 48.0
 offset_top = 640.0
 offset_right = 820.0
 offset_bottom = 820.0
 theme_override_styles/panel = SubResource("Sb_panel")
 
-[node name="Header" type="Label" parent="UI/CastPanel"]
+[node name="Header" type="Label" parent="UI/Scroll/Inner/CastPanel"]
 offset_left = 24.0
 offset_top = 14.0
 offset_right = 500.0
@@ -255,7 +270,7 @@ theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
 text = "キャスト"
 
-[node name="Sub" type="Label" parent="UI/CastPanel"]
+[node name="Sub" type="Label" parent="UI/Scroll/Inner/CastPanel"]
 offset_left = 24.0
 offset_top = 36.0
 offset_right = 800.0
@@ -264,7 +279,7 @@ theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "各行: 名前 · 読み(romaji) · 性別 · 性格 3 軸(協調 / 攻撃 / 好奇、0〜100)"
 
-[node name="AddCastBtn" type="Button" parent="UI/CastPanel"]
+[node name="AddCastBtn" type="Button" parent="UI/Scroll/Inner/CastPanel"]
 offset_left = 620.0
 offset_top = 16.0
 offset_right = 748.0
@@ -272,25 +287,25 @@ offset_bottom = 48.0
 theme_override_font_sizes/font_size = 11
 text = "＋ 追加"
 
-[node name="CastScroll" type="ScrollContainer" parent="UI/CastPanel"]
+[node name="CastScroll" type="ScrollContainer" parent="UI/Scroll/Inner/CastPanel"]
 offset_left = 24.0
 offset_top = 58.0
 offset_right = 748.0
 offset_bottom = 168.0
 horizontal_scroll_mode = 0
 
-[node name="CastList" type="VBoxContainer" parent="UI/CastPanel/CastScroll"]
+[node name="CastList" type="VBoxContainer" parent="UI/Scroll/Inner/CastPanel/CastScroll"]
 custom_minimum_size = Vector2(700, 0)
 theme_override_constants/separation = 6
 
-[node name="MapPanel" type="Panel" parent="UI"]
+[node name="MapPanel" type="Panel" parent="UI/Scroll/Inner"]
 offset_left = 840.0
 offset_top = 100.0
 offset_right = 1392.0
 offset_bottom = 820.0
 theme_override_styles/panel = SubResource("Sb_panel")
 
-[node name="Header" type="Label" parent="UI/MapPanel"]
+[node name="Header" type="Label" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 10.0
 offset_right = 300.0
@@ -299,7 +314,7 @@ theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.902, 0.894, 0.871, 1)
 text = "マップ (20×20)"
 
-[node name="Sub" type="Label" parent="UI/MapPanel"]
+[node name="Sub" type="Label" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 32.0
 offset_right = 540.0
@@ -308,39 +323,39 @@ theme_override_font_sizes/font_size = 10
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 text = "パレット選択 → マップをクリック/ドラッグで塗る。未指定なら seed で自動生成。"
 
-[node name="Palette" type="HBoxContainer" parent="UI/MapPanel"]
+[node name="Palette" type="HBoxContainer" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 60.0
 offset_right = 540.0
 offset_bottom = 100.0
 theme_override_constants/separation = 6
 
-[node name="Grass" type="Button" parent="UI/MapPanel/Palette"]
+[node name="Grass" type="Button" parent="UI/Scroll/Inner/MapPanel/Palette"]
 custom_minimum_size = Vector2(88, 36)
 toggle_mode = true
 button_pressed = true
 theme_override_font_sizes/font_size = 11
 text = "■ 草"
 
-[node name="Water" type="Button" parent="UI/MapPanel/Palette"]
+[node name="Water" type="Button" parent="UI/Scroll/Inner/MapPanel/Palette"]
 custom_minimum_size = Vector2(88, 36)
 toggle_mode = true
 theme_override_font_sizes/font_size = 11
 text = "■ 水"
 
-[node name="Forest" type="Button" parent="UI/MapPanel/Palette"]
+[node name="Forest" type="Button" parent="UI/Scroll/Inner/MapPanel/Palette"]
 custom_minimum_size = Vector2(88, 36)
 toggle_mode = true
 theme_override_font_sizes/font_size = 11
 text = "■ 森"
 
-[node name="Rock" type="Button" parent="UI/MapPanel/Palette"]
+[node name="Rock" type="Button" parent="UI/Scroll/Inner/MapPanel/Palette"]
 custom_minimum_size = Vector2(88, 36)
 toggle_mode = true
 theme_override_font_sizes/font_size = 11
 text = "■ 岩"
 
-[node name="TerrainInfo" type="Label" parent="UI/MapPanel"]
+[node name="TerrainInfo" type="Label" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 104.0
 offset_right = 540.0
@@ -350,7 +365,7 @@ theme_override_colors/font_color = Color(0.820, 0.808, 0.784, 1)
 autowrap_mode = 2
 text = "タイルを選ぶと、この場所の性質(移動の重さ / 食料の豊かさ / 通れるか)がここに出る。"
 
-[node name="MapCanvas" type="Control" parent="UI/MapPanel"]
+[node name="MapCanvas" type="Control" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 68.0
 offset_top = 150.0
 offset_right = 468.0
@@ -358,34 +373,34 @@ offset_bottom = 550.0
 mouse_filter = 1
 script = ExtResource("2_mc")
 
-[node name="FillRow" type="HBoxContainer" parent="UI/MapPanel"]
+[node name="FillRow" type="HBoxContainer" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 570.0
 offset_right = 540.0
 offset_bottom = 606.0
 theme_override_constants/separation = 6
 
-[node name="FillGrass" type="Button" parent="UI/MapPanel/FillRow"]
+[node name="FillGrass" type="Button" parent="UI/Scroll/Inner/MapPanel/FillRow"]
 custom_minimum_size = Vector2(110, 30)
 theme_override_font_sizes/font_size = 10
 text = "全部 草 で埋める"
 
-[node name="FillWater" type="Button" parent="UI/MapPanel/FillRow"]
+[node name="FillWater" type="Button" parent="UI/Scroll/Inner/MapPanel/FillRow"]
 custom_minimum_size = Vector2(110, 30)
 theme_override_font_sizes/font_size = 10
 text = "全部 水 で埋める"
 
-[node name="GenFromSeed" type="Button" parent="UI/MapPanel/FillRow"]
+[node name="GenFromSeed" type="Button" parent="UI/Scroll/Inner/MapPanel/FillRow"]
 custom_minimum_size = Vector2(140, 30)
 theme_override_font_sizes/font_size = 10
 text = "seed から再生成"
 
-[node name="ClearMap" type="Button" parent="UI/MapPanel/FillRow"]
+[node name="ClearMap" type="Button" parent="UI/Scroll/Inner/MapPanel/FillRow"]
 custom_minimum_size = Vector2(150, 30)
 theme_override_font_sizes/font_size = 10
 text = "マップ指定をクリア"
 
-[node name="Hint" type="Label" parent="UI/MapPanel"]
+[node name="Hint" type="Label" parent="UI/Scroll/Inner/MapPanel"]
 offset_left = 16.0
 offset_top = 620.0
 offset_right = 540.0
@@ -395,7 +410,7 @@ theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
 text = "マップ指定なし(クリア状態)の場合は保存時 terrain_json が空になり、Sim 起動時に seed から Perlin 生成される。1 マスでも塗ると terrain_json に N×N が保存される。"
 
-[node name="StatusLabel" type="Label" parent="UI"]
+[node name="StatusLabel" type="Label" parent="UI/Scroll/Inner"]
 offset_left = 48.0
 offset_top = 840.0
 offset_right = 1392.0
