@@ -12,6 +12,21 @@ func _init(size_: int = 20, seed_: int = 0) -> void:
 	world_seed = seed_
 	_generate()
 
+# 既に生成された terrain(エディタで手描きしたもの等)を注入する。
+# 配列の寸法が合わない場合は無視して seed 由来の地形のまま残す。
+func apply_explicit_terrain(t: Array) -> void:
+	if t.size() != size:
+		return
+	for row in t:
+		if not (row is Array) or row.size() != size:
+			return
+	terrain = []
+	for row in t:
+		var copied: Array = []
+		for v in row:
+			copied.append(int(v))
+		terrain.append(copied)
+
 func _generate() -> void:
 	var noise_water := FastNoiseLite.new()
 	noise_water.seed = world_seed

@@ -12,6 +12,11 @@ var editable: bool = true
 
 var base_config: Dictionary = {}    # LLM / costs / resources / relations / agents など丸ごと
 var cast_data: Array = []           # Array[Dictionary], 各要素 = {name, romaji, gender, cooperative, aggressive, curious}
+# map paint 用:
+# - has_custom_terrain = true なら terrain は手動指定、保存時に terrain_json に書き込む
+# - false なら保存時 terrain_json を空にして seed 生成にフォールバック
+var has_custom_terrain: bool = false
+var _map_canvas = null
 
 func _ready() -> void:
 	randomize()
@@ -28,6 +33,10 @@ func _ready() -> void:
 	if add_btn != null:  add_btn.pressed.connect(_on_add_cast_pressed)
 	if rnd_btn != null:  rnd_btn.pressed.connect(_on_random_seed_pressed)
 
+	_map_canvas = get_node_or_null(^"UI/MapPanel/MapCanvas")
+	_wire_palette()
+	_wire_fill_row()
+
 	terrarium_id = GameContext.selected_terrarium_id if GameContext else -1
 	if terrarium_id > 0 and store != null:
 		_load_existing(terrarium_id)
@@ -35,6 +44,7 @@ func _ready() -> void:
 		_load_template()
 	_rebuild_cast_list()
 	_apply_readonly_if_needed()
+	_map_canvas.tile_painted.connect(_on_tile_painted)
 
 func _exit_tree() -> void:
 	if store != null:
@@ -60,6 +70,13 @@ func _load_existing(id: int) -> void:
 		for a in cast_raw:
 			if a is Dictionary:
 				cast_data.append(a.duplicate(true))
+	# terrain: 空文字なら未指定扱い、存在するなら canvas に反映
+	var terr_s: String = str(row.get("terrain_json", ""))
+	if terr_s != "":
+		var parsed = JSON.parse_string(terr_s)
+		if parsed is Array and _map_canvas != null:
+			_map_canvas.set_terrain(parsed)
+			has_custom_terrain = true
 
 func _load_template() -> void:
 	editable = true
@@ -103,6 +120,64 @@ func _apply_readonly_if_needed() -> void:
 	if seed_f  != null: seed_f.editable = false
 	if tpd_f   != null: tpd_f.editable = false
 	if rnd_f   != null: rnd_f.disabled = true
+	# map canvas も入力停止、パレット / fill ボタン群も disabled
+	if _map_canvas != null:
+		_map_canvas.set_enabled(false)
+	for btn_name in ["Grass", "Water", "Forest", "Rock"]:
+		var b := get_node_or_null("UI/MapPanel/Palette/" + btn_name) as Button
+		if b != null: b.disabled = true
+	for btn_name in ["FillGrass", "FillWater", "GenFromSeed", "ClearMap"]:
+		var b := get_node_or_null("UI/MapPanel/FillRow/" + btn_name) as Button
+		if b != null: b.disabled = true
+
+# --- map paint wiring ---
+
+func _wire_palette() -> void:
+	var names := ["Grass", "Water", "Forest", "Rock"]
+	for i in range(names.size()):
+		var btn := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
+		if btn == null:
+			continue
+		btn.pressed.connect(_on_palette_pressed.bind(i, names))
+
+func _on_palette_pressed(idx: int, names: Array) -> void:
+	if _map_canvas != null:
+		_map_canvas.set_brush(idx)
+	# トグルグループ的に選択表示(他を外す)
+	for i in range(names.size()):
+		var b := get_node_or_null("UI/MapPanel/Palette/" + names[i]) as Button
+		if b != null:
+			b.button_pressed = (i == idx)
+
+func _wire_fill_row() -> void:
+	var g := get_node_or_null(^"UI/MapPanel/FillRow/FillGrass") as Button
+	var w := get_node_or_null(^"UI/MapPanel/FillRow/FillWater") as Button
+	var s := get_node_or_null(^"UI/MapPanel/FillRow/GenFromSeed") as Button
+	var c := get_node_or_null(^"UI/MapPanel/FillRow/ClearMap") as Button
+	if g != null: g.pressed.connect(func():
+		_map_canvas.fill_all(0)
+		has_custom_terrain = true
+	)
+	if w != null: w.pressed.connect(func():
+		_map_canvas.fill_all(1)
+		has_custom_terrain = true
+	)
+	if s != null: s.pressed.connect(_on_gen_from_seed_pressed)
+	if c != null: c.pressed.connect(func():
+		_map_canvas.fill_all(0)
+		has_custom_terrain = false
+	)
+
+# 現在の seed / size を使って Perlin ベースで地形を生成してキャンバスに表示する。
+# これを押した時点で has_custom_terrain = true(変更されたものとして保存される)。
+func _on_gen_from_seed_pressed() -> void:
+	var seed_v := int((get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value)
+	var w := World.new(20, seed_v)
+	_map_canvas.set_terrain(w.terrain.duplicate(true))
+	has_custom_terrain = true
+
+func _on_tile_painted(_x: int, _y: int) -> void:
+	has_custom_terrain = true
 
 # --- cast UI ---
 
@@ -251,13 +326,18 @@ func _on_save_pressed() -> void:
 	# config.json + config.local.json から都度注入する。これで 1 つのテラリウム
 	# を複数 LLM で走らせて比較できる。
 	base_config.erase("llm")
+	# terrain: has_custom_terrain が立っていれば canvas の内容を保存、
+	# 立っていなければ空文字にして Sim 側で seed 生成させる。
+	var terrain_str: String = ""
+	if has_custom_terrain and _map_canvas != null:
+		terrain_str = JSON.stringify(_map_canvas.get_terrain())
 	var data := {
 		"title": title,
 		"description": desc,
 		"world_size": 20,
 		"world_seed": seed_v,
 		"tick_per_day": tpd,
-		"terrain_json": "",
+		"terrain_json": terrain_str,
 		"cast_json": JSON.stringify(cast_data),
 		"config_json": JSON.stringify(base_config),
 	}

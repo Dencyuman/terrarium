@@ -16,6 +16,8 @@ var scheduler: Scheduler
 var ollama: LLMClient   # 歴史的名前。Ollama / Anthropic のどちらかが入る。
 var run_logger: TerrariumStore   # Phase 4.5 で DB バックエンド化。メソッド名は RunLogger 互換。
 var current_terrarium_id: int = -1
+# エディタで明示指定された地形(20×20 の int 配列、row-major)。空なら seed 生成。
+var explicit_terrain: Array = []
 
 var current_tab: int = 0
 var view_nodes: Array = []
@@ -81,6 +83,12 @@ func _ready() -> void:
 			run_logger.current_terrarium_id = selected_id
 			run_logger.current_terrarium_title = str(t_row.get("title", ""))
 			current_terrarium_id = selected_id
+			# terrain が明示指定されていれば World 初期化後に注入する
+			var terr_s: String = str(t_row.get("terrain_json", ""))
+			if terr_s != "":
+				var parsed = JSON.parse_string(terr_s)
+				if parsed is Array:
+					explicit_terrain = parsed
 	if config == null or config.is_empty():
 		# フォールバック経路: config.json + names.json 直読み + default terrarium 確保
 		config = runtime_cfg
@@ -146,6 +154,8 @@ func _ready() -> void:
 
 func _initialize_simulation(names_data: Dictionary) -> void:
 	world = World.new(world_size, world_seed)
+	if not explicit_terrain.is_empty():
+		world.apply_explicit_terrain(explicit_terrain)
 	resources = ResourceField.new(world, world_seed, config.get("resources", {}))
 	agents = _spawn_agents(names_data["agents"], world, world_seed)
 	scheduler = Scheduler.new(world, resources, agents, world_seed, tick_per_day)
