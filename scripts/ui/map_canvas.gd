@@ -7,13 +7,18 @@ extends Control
 
 signal tile_painted(x: int, y: int)
 
-const TILE_PX: int = 20
-const GRID_SIZE: int = 20
+# キャンバスの描画エリアは常に 400x400px 固定。グリッドサイズに応じて
+# タイルサイズを動的計算する(3x3 なら 133px/tile、20x20 なら 20px/tile)。
+const CANVAS_PX: int = 400
 
+var grid_size: int = 20
 var terrain: Array = []
 var selected_terrain: int = 0
 var _is_painting: bool = false
 var _enabled: bool = true
+
+func _tile_px() -> float:
+	return float(CANVAS_PX) / float(max(1, grid_size))
 
 const COLOR_GRASS  := Color(0.37, 0.56, 0.33, 1.0)
 const COLOR_WATER  := Color(0.28, 0.46, 0.72, 1.0)
@@ -22,7 +27,7 @@ const COLOR_ROCK   := Color(0.54, 0.51, 0.47, 1.0)
 const COLOR_GRID   := Color(0.08, 0.10, 0.13, 0.55)
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(TILE_PX * GRID_SIZE, TILE_PX * GRID_SIZE)
+	custom_minimum_size = Vector2(CANVAS_PX, CANVAS_PX)
 	if terrain.is_empty():
 		fill_all(0)
 
@@ -32,38 +37,60 @@ func set_enabled(v: bool) -> void:
 func set_brush(t: int) -> void:
 	selected_terrain = clampi(t, 0, 3)
 
-# 外部から現在の terrain を注入。row-major(terrain[y][x])の 20×20 配列。
+# 外部から現在の terrain を注入。row-major(terrain[y][x])の N×N 配列。
+# 寸法は grid_size を自動的に追従させる(3..20 を許容)。
 func set_terrain(t: Array) -> void:
-	if t.size() != GRID_SIZE:
+	var n: int = t.size()
+	if n < 3 or n > 20:
 		return
 	for row in t:
-		if not (row is Array) or row.size() != GRID_SIZE:
+		if not (row is Array) or row.size() != n:
 			return
+	grid_size = n
 	terrain = t
 	queue_redraw()
 
 func get_terrain() -> Array:
 	return terrain
 
+# グリッドサイズを切り替える。既存 terrain 値をできるだけ保持、不足分は草で埋める。
+func set_grid_size(n: int) -> void:
+	n = clampi(n, 3, 20)
+	if n == grid_size and not terrain.is_empty():
+		return
+	var new_t: Array = []
+	for y in n:
+		var row: Array = []
+		for x in n:
+			var v: int = 0
+			if y < terrain.size() and x < terrain[y].size():
+				v = int(terrain[y][x])
+			row.append(v)
+		new_t.append(row)
+	grid_size = n
+	terrain = new_t
+	queue_redraw()
+
 func fill_all(v: int) -> void:
 	terrain = []
-	for _y in GRID_SIZE:
+	for _y in grid_size:
 		var row: Array = []
-		for _x in GRID_SIZE:
+		for _x in grid_size:
 			row.append(v)
 		terrain.append(row)
 	queue_redraw()
 
 func _draw() -> void:
-	for y in GRID_SIZE:
-		for x in GRID_SIZE:
+	var tp: float = _tile_px()
+	for y in grid_size:
+		for x in grid_size:
 			var t: int = int(terrain[y][x])
-			draw_rect(Rect2(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX), _color_for(t), true)
-	for i in range(GRID_SIZE + 1):
-		draw_line(Vector2(i * TILE_PX, 0), Vector2(i * TILE_PX, GRID_SIZE * TILE_PX), COLOR_GRID, 1.0)
-		draw_line(Vector2(0, i * TILE_PX), Vector2(GRID_SIZE * TILE_PX, i * TILE_PX), COLOR_GRID, 1.0)
+			draw_rect(Rect2(x * tp, y * tp, tp, tp), _color_for(t), true)
+	for i in range(grid_size + 1):
+		draw_line(Vector2(i * tp, 0), Vector2(i * tp, grid_size * tp), COLOR_GRID, 1.0)
+		draw_line(Vector2(0, i * tp), Vector2(grid_size * tp, i * tp), COLOR_GRID, 1.0)
 	# 外枠
-	draw_rect(Rect2(0, 0, GRID_SIZE * TILE_PX, GRID_SIZE * TILE_PX), Color(0.23, 0.25, 0.30, 1.0), false, 1.5)
+	draw_rect(Rect2(0, 0, grid_size * tp, grid_size * tp), Color(0.23, 0.25, 0.30, 1.0), false, 1.5)
 
 func _color_for(t: int) -> Color:
 	match t:
@@ -84,9 +111,10 @@ func _gui_input(event: InputEvent) -> void:
 		_paint_at(event.position)
 
 func _paint_at(local: Vector2) -> void:
-	var x: int = int(local.x / TILE_PX)
-	var y: int = int(local.y / TILE_PX)
-	if x < 0 or y < 0 or x >= GRID_SIZE or y >= GRID_SIZE:
+	var tp: float = _tile_px()
+	var x: int = int(local.x / tp)
+	var y: int = int(local.y / tp)
+	if x < 0 or y < 0 or x >= grid_size or y >= grid_size:
 		return
 	if int(terrain[y][x]) != selected_terrain:
 		terrain[y][x] = selected_terrain

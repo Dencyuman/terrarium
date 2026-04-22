@@ -36,6 +36,9 @@ func _ready() -> void:
 	_map_canvas = get_node_or_null(^"UI/MapPanel/MapCanvas")
 	_wire_palette()
 	_wire_fill_row()
+	var size_field := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
+	if size_field != null:
+		size_field.value_changed.connect(_on_size_changed)
 
 	terrarium_id = GameContext.selected_terrarium_id if GameContext else -1
 	if terrarium_id > 0 and store != null:
@@ -62,6 +65,10 @@ func _load_existing(id: int) -> void:
 	(get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text = str(row.get("description", ""))
 	(get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value = float(int(row.get("world_seed", 0)))
 	(get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value = float(int(row.get("tick_per_day", 10)))
+	var size_loaded: int = clampi(int(row.get("world_size", 20)), 3, 20)
+	(get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox).value = float(size_loaded)
+	if _map_canvas != null:
+		_map_canvas.set_grid_size(size_loaded)
 	var cfg = JSON.parse_string(str(row.get("config_json", "{}")))
 	base_config = cfg if cfg is Dictionary else {}
 	var cast_raw = JSON.parse_string(str(row.get("cast_json", "[]")))
@@ -77,6 +84,7 @@ func _load_existing(id: int) -> void:
 		if parsed is Array and _map_canvas != null:
 			_map_canvas.set_terrain(parsed)
 			has_custom_terrain = true
+	_update_constraint_label()
 
 func _load_template() -> void:
 	editable = true
@@ -100,6 +108,11 @@ func _load_template() -> void:
 	if seed_field != null:
 		seed_field.value = float(int(base_config.get("world", {}).get("seed", randi())))
 	(get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value = float(int(base_config.get("world", {}).get("tick_per_day", 10)))
+	var template_size: int = clampi(int(base_config.get("world", {}).get("size", 20)), 3, 20)
+	(get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox).value = float(template_size)
+	if _map_canvas != null:
+		_map_canvas.set_grid_size(template_size)
+	_update_constraint_label()
 
 func _apply_readonly_if_needed() -> void:
 	if editable:
@@ -120,6 +133,8 @@ func _apply_readonly_if_needed() -> void:
 	if seed_f  != null: seed_f.editable = false
 	if tpd_f   != null: tpd_f.editable = false
 	if rnd_f   != null: rnd_f.disabled = true
+	var size_f := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
+	if size_f != null: size_f.editable = false
 	# map canvas も入力停止、パレット / fill ボタン群も disabled
 	if _map_canvas != null:
 		_map_canvas.set_enabled(false)
@@ -178,6 +193,56 @@ func _on_gen_from_seed_pressed() -> void:
 
 func _on_tile_painted(_x: int, _y: int) -> void:
 	has_custom_terrain = true
+
+# --- size / constraint ---
+
+func _on_size_changed(v: float) -> void:
+	var n: int = int(v)
+	if _map_canvas != null:
+		_map_canvas.set_grid_size(n)
+	_update_constraint_label()
+
+func _current_size() -> int:
+	var f := get_node_or_null(^"UI/MetaPanel/SizeField") as SpinBox
+	return int(f.value) if f != null else 20
+
+func _constraint_ok(n_size: int, n_cast: int) -> bool:
+	# マップ面積 ≥ エージェント数 × 4(= 1 人あたり 4 タイル確保)
+	# エージェント数の下限 2、上限 20 も合わせて判定する。
+	if n_cast < 2 or n_cast > 20:
+		return false
+	if n_size < 3 or n_size > 20:
+		return false
+	return (n_size * n_size) >= (n_cast * 4)
+
+func _update_constraint_label() -> void:
+	var lbl := get_node_or_null(^"UI/MetaPanel/ConstraintLabel") as Label
+	if lbl == null:
+		return
+	var n_size: int = _current_size()
+	var n_cast: int = cast_data.size()
+	var ok: bool = _constraint_ok(n_size, n_cast)
+	var area: int = n_size * n_size
+	var need: int = n_cast * 4
+	if ok:
+		lbl.text = "制約 OK: map %d² = %d タイル  ≥  %d 人 × 4 = %d" % [n_size, area, n_cast, need]
+		lbl.add_theme_color_override("font_color", Color(0.431, 0.855, 0.541, 1))
+	else:
+		var reason: String
+		if n_cast < 2:
+			reason = "エージェント数は最低 2 人"
+		elif n_cast > 20:
+			reason = "エージェント数は最大 20 人"
+		elif area < need:
+			reason = "map %d² = %d < %d 人 × 4 = %d(タイル不足)" % [n_size, area, n_cast, need]
+		else:
+			reason = "サイズ範囲エラー"
+		lbl.text = "制約 NG: %s" % reason
+		lbl.add_theme_color_override("font_color", Color(0.88, 0.44, 0.44, 1))
+	# 保存可否も同期
+	var save_btn := get_node_or_null(^"UI/SaveBtn") as Button
+	if save_btn != null and editable:
+		save_btn.disabled = not ok
 
 # --- cast UI ---
 
@@ -291,10 +356,23 @@ func _add_slider(parent: Control, cast_idx: int, key: String, label: String, val
 func _on_delete_cast(idx: int) -> void:
 	if idx < 0 or idx >= cast_data.size():
 		return
+	if cast_data.size() <= 2:
+		# 最小 2 人制約のため削除拒否(UI 上で即フィードバック)
+		_flash_constraint("エージェント数は最低 2 人必要です")
+		return
 	cast_data.remove_at(idx)
 	_rebuild_cast_list()
+	_update_constraint_label()
 
 func _on_add_cast_pressed() -> void:
+	if cast_data.size() >= 20:
+		_flash_constraint("エージェント数は最大 20 人です")
+		return
+	# 追加後に constraint が通るかも事前チェック(map² < (cast+1)*4 なら拒否)
+	var next_count: int = cast_data.size() + 1
+	if not _constraint_ok(_current_size(), next_count):
+		_flash_constraint("追加するとマップサイズ² < %d 人×4 になるため不可(マップを大きくしてください)" % next_count)
+		return
 	cast_data.append({
 		"name": "",
 		"romaji": "",
@@ -304,11 +382,24 @@ func _on_add_cast_pressed() -> void:
 		"curious": 50,
 	})
 	_rebuild_cast_list()
+	_update_constraint_label()
+
+func _flash_constraint(msg: String) -> void:
+	var lbl := get_node_or_null(^"UI/MetaPanel/ConstraintLabel") as Label
+	if lbl == null:
+		return
+	lbl.text = "制約 NG: %s" % msg
+	lbl.add_theme_color_override("font_color", Color(0.88, 0.44, 0.44, 1))
 
 # --- save / cancel ---
 
 func _on_save_pressed() -> void:
 	if not editable:
+		return
+	var n_size: int = _current_size()
+	var n_cast: int = cast_data.size()
+	if not _constraint_ok(n_size, n_cast):
+		_update_constraint_label()
 		return
 	var title := (get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text.strip_edges()
 	if title == "":
@@ -320,7 +411,7 @@ func _on_save_pressed() -> void:
 	if not base_config.has("world"):
 		base_config["world"] = {}
 	base_config["world"]["seed"] = seed_v
-	base_config["world"]["size"] = 20
+	base_config["world"]["size"] = n_size
 	base_config["world"]["tick_per_day"] = tpd
 	# LLM provider / モデル / API key はテラリウムに埋め込まず、ランタイムで
 	# config.json + config.local.json から都度注入する。これで 1 つのテラリウム
@@ -334,7 +425,7 @@ func _on_save_pressed() -> void:
 	var data := {
 		"title": title,
 		"description": desc,
-		"world_size": 20,
+		"world_size": n_size,
 		"world_seed": seed_v,
 		"tick_per_day": tpd,
 		"terrain_json": terrain_str,

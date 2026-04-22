@@ -157,6 +157,34 @@ max_value = 100.0
 step = 1.0
 value = 10.0
 
+[node name="SizeLbl" type="Label" parent="UI/MetaPanel"]
+offset_left = 300.0
+offset_top = 164.0
+offset_right = 420.0
+offset_bottom = 186.0
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
+text = "マップサイズ N×N"
+
+[node name="SizeField" type="SpinBox" parent="UI/MetaPanel"]
+offset_left = 440.0
+offset_top = 160.0
+offset_right = 540.0
+offset_bottom = 188.0
+min_value = 3.0
+max_value = 20.0
+step = 1.0
+value = 20.0
+
+[node name="ConstraintLabel" type="Label" parent="UI/MetaPanel"]
+offset_left = 16.0
+offset_top = 196.0
+offset_right = 740.0
+offset_bottom = 216.0
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
+text = "制約: マップサイズ² ≥ エージェント数 × 4"
+
 [node name="CastPanel" type="Panel" parent="UI"]
 offset_left = 48.0
 offset_top = 340.0

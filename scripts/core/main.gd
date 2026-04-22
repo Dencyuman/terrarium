@@ -237,6 +237,10 @@ func _wire_views() -> void:
 			world_view.agent_clicked.connect(_on_agent_clicked)
 		if not world_view.zoom_requested.is_connected(_on_zoom_requested):
 			world_view.zoom_requested.connect(_on_zoom_requested)
+		# world.size が可変(3〜20)のため、720x720 フレームに常にフィットするよう
+		# scale を調整する。TILE_SIZE=36 はそのまま、Node2D.scale で視覚倍率だけ変える。
+		var fit_scale: float = WORLD_FRAME_SIZE / float(max(1, world.size) * 36)
+		world_view.scale = Vector2(fit_scale, fit_scale)
 	var relation := stack.get_node_or_null(^"RelationView") as RelationGraphView
 	if relation != null:
 		relation.set_agents(agents)
@@ -291,7 +295,8 @@ func _on_reset_view() -> void:
 	var wv := get_node_or_null(world_view_path) as WorldView
 	if wv == null:
 		return
-	wv.scale = Vector2.ONE
+	var fit_scale: float = WORLD_FRAME_SIZE / float(max(1, world.size) * 36)
+	wv.scale = Vector2(fit_scale, fit_scale)
 	wv.position = WORLD_ORIG_LOCAL
 
 func _on_zoom_requested(rect_local: Rect2) -> void:
