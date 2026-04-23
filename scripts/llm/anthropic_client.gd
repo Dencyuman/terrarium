@@ -96,7 +96,7 @@ func _start_request(task: Dictionary) -> void:
 		"model": model,
 		"max_tokens": max_tokens,
 		"temperature": temperature,
-		"system": PromptBuilder.system_prompt(),
+		"system": PromptBuilder.system_prompt(disposition),
 		"messages": [
 			{"role": "user", "content": user_prompt}
 		],

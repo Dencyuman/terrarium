@@ -16,6 +16,9 @@ signal usage_recorded(input_tokens: int, output_tokens: int)
 
 var last_latency_ms: int = 0
 var last_status: String = "unknown"
+# テラリウムごとの種族傾向テキスト(main.gd がテラリウム load 時に注入)。
+# 空文字なら SYSTEM_PROMPT をそのまま使う。
+var disposition: String = ""
 
 func configure(_cfg: Dictionary) -> void:
 	pass

@@ -91,7 +91,7 @@ func _start_request(task: Dictionary) -> void:
 	}
 	var body := {
 		"systemInstruction": {
-			"parts": [{"text": PromptBuilder.system_prompt()}]
+			"parts": [{"text": PromptBuilder.system_prompt(disposition)}]
 		},
 		"contents": [
 			{"role": "user", "parts": [{"text": user_prompt}]}

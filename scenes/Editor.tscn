@@ -245,6 +245,27 @@ columns = 5
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 8
 
+[node name="傾向" type="MarginContainer" parent="UI/EnvPanel/Tabs"]
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="DispositionBox" type="VBoxContainer" parent="UI/EnvPanel/Tabs/傾向"]
+theme_override_constants/separation = 6
+
+[node name="DispositionHint" type="Label" parent="UI/EnvPanel/Tabs/傾向/DispositionBox"]
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
+text = "この集団の生物学的傾き(個体の意識下にある身体の prior)。LLM のプロンプトに注入される。規範命令ではなく、身体傾向として書く。"
+autowrap_mode = 2
+
+[node name="DispositionField" type="TextEdit" parent="UI/EnvPanel/Tabs/傾向/DispositionBox"]
+custom_minimum_size = Vector2(0, 130)
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 12
+wrap_mode = 1
+
 [node name="CastPanel" type="Panel" parent="UI"]
 offset_left = 48.0
 offset_top = 640.0

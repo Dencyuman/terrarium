@@ -110,6 +110,10 @@ func _load_existing(id: int) -> void:
 	editable = store.is_terrarium_editable(id)
 	(get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text = str(row.get("title", ""))
 	(get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text = str(row.get("description", ""))
+	var disp_field := get_node_or_null(^"UI/EnvPanel/Tabs/傾向/DispositionBox/DispositionField") as TextEdit
+	if disp_field != null:
+		var disp_val: String = str(row.get("disposition", ""))
+		disp_field.text = disp_val if disp_val != "" else TerrariumStore.DEFAULT_DISPOSITION
 	(get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox).value = float(int(row.get("world_seed", 0)))
 	(get_node_or_null(^"UI/MetaPanel/TickPerDayField") as SpinBox).value = float(int(row.get("tick_per_day", 10)))
 	var size_loaded: int = clampi(int(row.get("world_size", 20)), 3, 20)
@@ -152,6 +156,9 @@ func _load_template() -> void:
 			cast_data = parsed2["agents"]
 	(get_node_or_null(^"UI/MetaPanel/TitleField") as LineEdit).text = "new terrarium"
 	(get_node_or_null(^"UI/MetaPanel/DescField") as LineEdit).text = ""
+	var disp_field := get_node_or_null(^"UI/EnvPanel/Tabs/傾向/DispositionBox/DispositionField") as TextEdit
+	if disp_field != null:
+		disp_field.text = TerrariumStore.DEFAULT_DISPOSITION
 	var seed_field := get_node_or_null(^"UI/MetaPanel/SeedField") as SpinBox
 	if seed_field != null:
 		seed_field.value = float(int(base_config.get("world", {}).get("seed", randi())))
@@ -179,6 +186,8 @@ func _apply_readonly_if_needed() -> void:
 	var rnd_f := get_node_or_null(^"UI/MetaPanel/SeedRandomBtn") as Button
 	if title_f != null: title_f.editable = false
 	if desc_f  != null: desc_f.editable = false
+	var disp_f := get_node_or_null(^"UI/EnvPanel/Tabs/傾向/DispositionBox/DispositionField") as TextEdit
+	if disp_f != null: disp_f.editable = false
 	if seed_f  != null: seed_f.editable = false
 	if tpd_f   != null: tpd_f.editable = false
 	if rnd_f   != null: rnd_f.disabled = true
@@ -662,6 +671,8 @@ func _on_save_pressed() -> void:
 	var terrain_str: String = ""
 	if has_custom_terrain and _map_canvas != null:
 		terrain_str = JSON.stringify(_map_canvas.get_terrain())
+	var disp_field := get_node_or_null(^"UI/EnvPanel/Tabs/傾向/DispositionBox/DispositionField") as TextEdit
+	var disp_text: String = disp_field.text if disp_field != null else TerrariumStore.DEFAULT_DISPOSITION
 	var data := {
 		"title": title,
 		"description": desc,
@@ -671,6 +682,7 @@ func _on_save_pressed() -> void:
 		"terrain_json": terrain_str,
 		"cast_json": JSON.stringify(cast_data),
 		"config_json": JSON.stringify(base_config),
+		"disposition": disp_text,
 	}
 	if terrarium_id > 0:
 		store.update_terrarium(terrarium_id, data)

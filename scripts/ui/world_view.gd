@@ -256,7 +256,9 @@ func _draw_agents() -> void:
 		var color: Color = agent.badge_color()
 		draw_circle(center + Vector2(0, 2), BADGE_RADIUS, Color(0, 0, 0, 0.40))
 		draw_circle(center, BADGE_RADIUS, color)
-		draw_arc(center, BADGE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.9), 2.0)
+		# 外周を性別色で縁取り(♀=淡桃 / ♂=淡青)。視認性が高く、小さなバッジでも一目で判別できる。
+		var ring_color: Color = Color(0.95, 0.58, 0.74, 0.95) if agent.gender == "female" else Color(0.50, 0.70, 0.95, 0.95)
+		draw_arc(center, BADGE_RADIUS, 0, TAU, 48, ring_color, 2.2)
 		draw_arc(center, BADGE_RADIUS - 1, 0, TAU, 48, Color(1, 1, 1, 0.75), 1.0)
 		_draw_badge_label(agent.agent_name, center)
 		_draw_inventory_dots(agent, center)

@@ -415,37 +415,38 @@ theme_override_constants/separation = 4
 custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
 text = "全て"
-disabled = true
+toggle_mode = true
+button_pressed = true
 
 [node name="F1" type="Button" parent="UI/EventChroniclePanel/Filters"]
 custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
 text = "誕生"
-disabled = true
+toggle_mode = true
 
 [node name="F2" type="Button" parent="UI/EventChroniclePanel/Filters"]
 custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
 text = "死亡"
-disabled = true
+toggle_mode = true
 
 [node name="F3" type="Button" parent="UI/EventChroniclePanel/Filters"]
 custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
 text = "戦闘"
-disabled = true
+toggle_mode = true
 
 [node name="F4" type="Button" parent="UI/EventChroniclePanel/Filters"]
-custom_minimum_size = Vector2(56, 24)
+custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
-text = "共有"
-disabled = true
+text = "抱擁"
+toggle_mode = true
 
 [node name="F5" type="Button" parent="UI/EventChroniclePanel/Filters"]
 custom_minimum_size = Vector2(40, 24)
 theme_override_font_sizes/font_size = 10
-text = "教育"
-disabled = true
+text = "分与"
+toggle_mode = true
 
 [node name="EmptyState" type="Label" parent="UI/EventChroniclePanel"]
 offset_left = 16.0
@@ -455,13 +456,13 @@ offset_bottom = 340.0
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.541, 0.525, 0.502, 1)
 autowrap_mode = 2
-text = "世代交代・死亡・誕生・共有オブジェクト生成などの重大イベントがここに蓄積されます。
+text = "シミュレーション開始後、重大イベントがここに tick 順で蓄積されます。
 
-· 💫 誕生     (Phase 5+)
-· 🕊 死亡     (Phase 4+)
-· 💢 戦闘     (Phase 4+)
-· 📜 共有物    (Phase 7+)
-· 🎓 教育     (Phase 6+)"
+· 💫 誕生
+· 🕊 死亡
+· 💢 戦闘
+· 💕 抱擁
+· 📤 分与"
 
 [node name="FooterBar" type="Panel" parent="UI"]
 offset_left = 0.0

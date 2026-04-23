@@ -52,6 +52,12 @@ const PRICING := {
 
 var log_entries: Array[String] = []
 var chronicle_entries: Array[Dictionary] = []
+# 年代記フィルタ: "all" / "birth" / "death" / "attack" / "embrace" / "give"
+var chronicle_filter: String = "all"
+# フィルタボタン node 名 (UI/EventChroniclePanel/Filters 配下) → 対応 kind
+const CHRONICLE_FILTER_MAP := {
+	"F0": "all", "F1": "birth", "F2": "death", "F3": "attack", "F4": "embrace", "F5": "give",
+}
 var decide_progress_str: String = "—"
 var selected_agent_id: int = -1
 var ping_retry_timer: Timer
@@ -112,6 +118,15 @@ func _ready() -> void:
 			ollama = OllamaClient.new()
 	add_child(ollama)
 	ollama.configure(config["llm"])
+	# テラリウムの disposition(種族傾向の自由文)を system_prompt に注入する。
+	# 選択テラリウムに保存されたもの優先、無ければ store のデフォルト、それも無ければ空。
+	var disp: String = ""
+	if run_logger != null and current_terrarium_id > 0:
+		var t_row2: Dictionary = run_logger.get_terrarium(current_terrarium_id)
+		disp = str(t_row2.get("disposition", ""))
+	if disp.strip_edges() == "":
+		disp = TerrariumStore.DEFAULT_DISPOSITION
+	ollama.disposition = disp
 	print("[LLM] provider=%s" % provider)
 	# run 開始 / 再開の判定:
 	#   既存の ended_at が NULL の run が該当テラリウムにある → 再開(state_json から復元)
@@ -139,6 +154,8 @@ func _ready() -> void:
 		var snap: Dictionary = run_logger.load_state(run_logger.current_run_id)
 		if not snap.is_empty():
 			_apply_state_snapshot(snap)
+		# chronicle / log は state_json に入っていないので events テーブルから再構築する。
+		_reload_history_from_events(run_logger.current_run_id)
 	_wire_views()
 	_wire_tabs()
 	_wire_playback()
@@ -263,9 +280,14 @@ func _wire_views() -> void:
 	var family := stack.get_node_or_null(^"FamilyView") as FamilyTreeView
 	if family != null:
 		family.set_agents(agents)
+		if not family.agent_clicked.is_connected(_on_agent_clicked):
+			family.agent_clicked.connect(_on_agent_clicked)
 	var chronicle := stack.get_node_or_null(^"ChronicleView") as EventChroniclePageView
 	if chronicle != null:
 		chronicle.set_agents(agents)
+		chronicle.set_entries(chronicle_entries, chronicle_filter)
+		if not chronicle.filter_requested.is_connected(_on_chronicle_page_filter):
+			chronicle.filter_requested.connect(_on_chronicle_page_filter)
 	view_nodes = [world_view, relation, family, chronicle]
 
 func _wire_tabs() -> void:
@@ -294,6 +316,34 @@ func _wire_view_controls() -> void:
 		ta.toggled.connect(_on_toggle_arrows)
 	if rv != null:
 		rv.pressed.connect(_on_reset_view)
+	# 年代記フィルタボタン群 (EventChroniclePanel/Filters/F0..F5)。
+	# toggle_mode でラジオ的に排他選択させる。
+	var filters := get_node_or_null(^"UI/EventChroniclePanel/Filters")
+	if filters != null:
+		for name_str in CHRONICLE_FILTER_MAP.keys():
+			var btn := filters.get_node_or_null(NodePath(name_str)) as Button
+			if btn == null:
+				continue
+			btn.pressed.connect(_on_chronicle_filter_pressed.bind(str(name_str)))
+
+func _on_chronicle_filter_pressed(btn_name: String) -> void:
+	var kind: String = CHRONICLE_FILTER_MAP.get(btn_name, "all")
+	_set_chronicle_filter(kind)
+
+func _on_chronicle_page_filter(kind: String) -> void:
+	_set_chronicle_filter(kind)
+
+func _set_chronicle_filter(kind: String) -> void:
+	chronicle_filter = kind
+	# 右下の toggle ボタンを kind に合わせて排他選択。
+	var filters := get_node_or_null(^"UI/EventChroniclePanel/Filters")
+	if filters != null:
+		for other in CHRONICLE_FILTER_MAP.keys():
+			var b := filters.get_node_or_null(NodePath(other)) as Button
+			if b == null:
+				continue
+			b.button_pressed = (CHRONICLE_FILTER_MAP[other] == kind)
+	_update_chronicle_ui()
 
 func _on_toggle_bubbles(enabled: bool) -> void:
 	var wv := get_node_or_null(world_view_path) as WorldView
@@ -468,7 +518,8 @@ func _apply_state_snapshot(snap: Dictionary) -> void:
 		if scheduler.rng != null:
 			scheduler.rng.state = int(snap.get("rng_state", scheduler.rng.state))
 	# 既存 agents リストは _spawn_agents で名前/性格などは正しい初期値になっている。
-	# ここでは動的状態(pos/hunger/health/stamina/inventory/relations/events等)だけ上書き。
+	# ここでは動的状態(pos/hunger/health/stamina/inventory/relations/events等)を上書き。
+	# run 中に reproduce_with で誕生した agents は初期 spawn に居ないので、新規 Agent を作って追加する。
 	var agent_dumps = snap.get("agents", [])
 	if agent_dumps is Array:
 		var by_id: Dictionary = {}
@@ -479,7 +530,17 @@ func _apply_state_snapshot(snap: Dictionary) -> void:
 				continue
 			var aid: int = int(dump.get("id", -1))
 			if not by_id.has(aid):
-				continue
+				# snapshot にあるが初期 spawn に居ない = run 中に誕生した子。再構築する。
+				var new_a := Agent.new(aid)
+				new_a.agent_name = str(dump.get("agent_name", "?"))
+				new_a.romaji = str(dump.get("romaji", ""))
+				new_a.gender = str(dump.get("gender", "female"))
+				new_a.cooperative = int(dump.get("cooperative", 50))
+				new_a.aggressive = int(dump.get("aggressive", 50))
+				new_a.curious = int(dump.get("curious", 50))
+				new_a.inventory_capacity = int(dump.get("inventory_capacity", Agent.DEFAULT_INVENTORY_CAPACITY))
+				agents.append(new_a)
+				by_id[aid] = new_a
 			_deserialize_agent_state(by_id[aid], dump)
 	# resources.food を上書き(2D bool array)
 	var food = snap.get("resources_food", null)
@@ -604,6 +665,129 @@ func _on_tick_completed_with_logging(tick_no: int) -> void:
 	var snap: Dictionary = _build_state_snapshot()
 	run_logger.save_state(snap)
 	run_logger.save_tick_snapshot(tick_no, snap)
+
+func _reload_history_from_events(run_id: int) -> void:
+	# resume 時、events テーブルから chronicle_entries と log_entries を再構築する。
+	# 加えて: 古いバグで state_json が子 agents を失っているケースに備え、
+	# birth / death イベントから agents[] に placeholder(名前 + parent_ids + 死亡)を補う。
+	chronicle_entries.clear()
+	log_entries.clear()
+	if run_logger == null:
+		return
+	var rows: Array = run_logger.list_events_for_resume(run_id)
+	# Pass 1: birth/death から失われた子 agents を補完
+	_reconstruct_missing_children(rows)
+	# Pass 2: ログと年代記を再構築
+	for row in rows:
+		var type_s: String = str(row.get("type", ""))
+		var data = JSON.parse_string(str(row.get("data_json", "{}")))
+		if not (data is Dictionary):
+			continue
+		if type_s == "event":
+			chronicle_entries.push_back(data)
+			if chronicle_entries.size() > CHRONICLE_MAX:
+				chronicle_entries.pop_front()
+		elif type_s == "action":
+			# silent fail (succeeded=false) は省いて流れを読みやすく保つ
+			if not bool(data.get("succeeded", true)):
+				continue
+			var agent_id: int = int(row.get("agent_id", -1))
+			var agent := _get_agent_by_id(agent_id)
+			if agent == null:
+				continue
+			var action := _action_from_event_data(data)
+			if action == null:
+				continue
+			_append_log_entry(agent, action)
+	_update_chronicle_ui()
+	_update_speech_log_ui()
+
+# events テーブルの birth/death から、現在 agents[] に無い子 agent を placeholder として生成する。
+# 既に居る agent には触らない(scheduler 再開時に正しい state を持たせ続ける)。
+func _reconstruct_missing_children(rows: Array) -> void:
+	var by_id: Dictionary = {}
+	for a in agents:
+		by_id[a.id] = a
+	for row in rows:
+		if str(row.get("type", "")) != "event":
+			continue
+		var data = JSON.parse_string(str(row.get("data_json", "{}")))
+		if not (data is Dictionary):
+			continue
+		var kind_s: String = str(data.get("kind", ""))
+		if kind_s == "birth":
+			var child_id: int = int(data.get("child_id", -1))
+			if child_id < 0 or by_id.has(child_id):
+				continue
+			var actor_id: int = int(data.get("actor_id", -1))
+			var target_id: int = int(data.get("target_id", -1))
+			var child_name: String = _parse_birth_child_name(str(data.get("text", "")))
+			var new_a := Agent.new(child_id)
+			new_a.agent_name = child_name if child_name != "" else "子%d" % child_id
+			new_a.parent_ids = [actor_id, target_id]
+			# 実際の位置/体力は不明。death event で health=0 にされるまでは「生存扱い」にしておくと
+			# 世代計算は正しくなる。死亡が未反映なら after のループでまとめて落とす。
+			new_a.health = Agent.HEALTH_INITIAL
+			new_a.hunger = Agent.HUNGER_INITIAL
+			new_a.stamina = Agent.STAMINA_INITIAL
+			agents.append(new_a)
+			by_id[child_id] = new_a
+		elif kind_s == "death":
+			var dead_id: int = int(data.get("target_id", -1))
+			if by_id.has(dead_id):
+				var d: Agent = by_id[dead_id]
+				d.health = 0
+
+func _parse_birth_child_name(text: String) -> String:
+	# "{parent_a} と {parent_b} の間に {child} が生まれた" から child 名だけ抽出。
+	var marker := "の間に "
+	var idx := text.find(marker)
+	if idx < 0:
+		return ""
+	var tail := text.substr(idx + marker.length())
+	var end := tail.find(" が生まれた")
+	if end <= 0:
+		return ""
+	return tail.substr(0, end)
+
+# events.data_json から Action を再構成する(フィールドが無いものはデフォルト)。
+func _action_from_event_data(data: Dictionary) -> Action:
+	var kind_s: String = str(data.get("kind", ""))
+	var reason: String = str(data.get("reason", ""))
+	var target_id: int = int(data.get("target_id", -1))
+	var dir_arr = data.get("direction", null)
+	var direction: Vector2i = Vector2i.ZERO
+	if dir_arr is Array and dir_arr.size() >= 2:
+		direction = Vector2i(int(dir_arr[0]), int(dir_arr[1]))
+	match kind_s:
+		"wait":
+			return Action.wait(reason)
+		"move":
+			return Action.move(direction, reason)
+		"take":
+			return Action.take(reason, direction)
+		"eat":
+			return Action.eat(reason)
+		"give":
+			return Action.give(target_id, reason)
+		"attack":
+			return Action.attack(target_id, reason)
+		"embrace":
+			return Action.embrace(target_id, reason)
+		"look":
+			return Action.look(direction, reason)
+		"reproduce_with":
+			return Action.reproduce_with(target_id, reason)
+		"speak":
+			var text: String = str(data.get("speech_text", ""))
+			var raw_ids = data.get("speech_target_ids", [])
+			var ids: Array[int] = []
+			if raw_ids is Array:
+				for t in raw_ids:
+					ids.append(int(t))
+			return Action.speak(text, ids, reason)
+		_:
+			return null
 
 func _on_event_emitted(event: Dictionary) -> void:
 	chronicle_entries.push_back(event)
@@ -979,6 +1163,9 @@ func _update_tick_ui() -> void:
 	var pop_value := get_node_or_null(^"UI/StatusBar/PopValue") as Label
 	if pop_value != null:
 		pop_value.text = "%d  (%s%d)" % [alive_count, "±" if alive_count == agents.size() else "-", agents.size() - alive_count]
+	var gen_value := get_node_or_null(^"UI/StatusBar/GenValue") as Label
+	if gen_value != null:
+		gen_value.text = "G%d" % _compute_max_generation()
 	var action_header := get_node_or_null(^"UI/ActionPanel/Header") as Label
 	if action_header != null:
 		action_header.text = "現在のアクション (Tick %04d)" % scheduler.tick
@@ -1090,7 +1277,8 @@ func _direction_label(d: Vector2i) -> String:
 		_: return "?"
 
 func _update_chronicle_ui() -> void:
-	# 右下のコンパクトパネル(最新 12 件)
+	var filtered: Array = _filter_chronicle_entries(chronicle_entries, chronicle_filter)
+	# 右下のコンパクトパネル(最新 N 件)
 	var compact := get_node_or_null(^"UI/EventChroniclePanel") as Panel
 	if compact != null:
 		var empty := compact.get_node_or_null(^"EmptyState") as Label
@@ -1108,16 +1296,30 @@ func _update_chronicle_ui() -> void:
 			body.add_theme_font_size_override("normal_font_size", 10)
 			body.add_theme_color_override("default_color", Color(0.820, 0.808, 0.784, 1))
 			compact.add_child(body)
-		var has_events := not chronicle_entries.is_empty()
+		var has_events := not filtered.is_empty()
 		if empty != null:
 			empty.visible = not has_events
 		body.visible = has_events
 		if has_events:
-			var compact_start: int = max(0, chronicle_entries.size() - CHRONICLE_COMPACT_LIMIT)
+			var compact_start: int = max(0, filtered.size() - CHRONICLE_COMPACT_LIMIT)
 			var lines: Array[String] = []
-			for i in range(compact_start, chronicle_entries.size()):
-				lines.append(_chronicle_line(chronicle_entries[i]))
+			for i in range(compact_start, filtered.size()):
+				lines.append(_chronicle_line(filtered[i]))
 			body.text = "\n".join(lines)
+	# フルページの 年代記 ビューにも push(表示中でなくとも持たせておく)
+	var chronicle_view := get_node_or_null(^"ViewStack/ChronicleView") as EventChroniclePageView
+	if chronicle_view != null:
+		chronicle_view.set_entries(chronicle_entries, chronicle_filter)
+
+func _filter_chronicle_entries(entries: Array, kind: String) -> Array:
+	if kind == "all":
+		return entries
+	var out: Array = []
+	# 誕生フィルタは "birth" のみ (reproduce_fail は含めない)、他は kind 完全一致。
+	for e in entries:
+		if str(e.get("kind", "")) == kind:
+			out.append(e)
+	return out
 
 func _chronicle_line(e: Dictionary) -> String:
 	var icon: String = _chronicle_icon(e.get("kind", ""))
@@ -1138,7 +1340,7 @@ func _chronicle_icon(kind: String) -> String:
 		"give":
 			return "📤"
 		"embrace":
-			return "❤"
+			return "💕"
 		_:
 			return "·"
 
@@ -1357,12 +1559,60 @@ func _select_agent(id: int) -> void:
 	var relation := get_node_or_null(^"ViewStack/RelationView") as RelationGraphView
 	if relation != null:
 		relation.set_selected_agent(id)
+	var family := get_node_or_null(^"ViewStack/FamilyView") as FamilyTreeView
+	if family != null:
+		family.set_selected_agent(id)
 
 func _get_agent_by_id(id: int) -> Agent:
 	for a in agents:
 		if a.id == id:
 			return a
 	return null
+
+# 家系図の世代計算と同じロジック: parent_ids が空なら G1、それ以外は親世代の max + 1。
+# 親が agents 外にいれば G1 とみなす(トポロジカル順で未解決なら fallback)。
+func _compute_max_generation() -> int:
+	var gen_of: Dictionary = {}
+	var remaining: Array = agents.duplicate()
+	var safety: int = 0
+	while not remaining.is_empty() and safety < 2000:
+		safety += 1
+		var progress: bool = false
+		for i in range(remaining.size() - 1, -1, -1):
+			var a: Agent = remaining[i]
+			if a.parent_ids.is_empty():
+				gen_of[a.id] = 1
+				remaining.remove_at(i)
+				progress = true
+				continue
+			var all_resolved: bool = true
+			var max_p: int = 0
+			for pid in a.parent_ids:
+				if gen_of.has(pid):
+					max_p = max(max_p, int(gen_of[pid]))
+				else:
+					var found: bool = false
+					for r in remaining:
+						if r.id == pid:
+							found = true
+							break
+					if found:
+						all_resolved = false
+						break
+					# 親が agents 外: 既に消えていても血統上は存在、G1 扱い
+			if all_resolved:
+				gen_of[a.id] = max_p + 1
+				remaining.remove_at(i)
+				progress = true
+		if not progress:
+			# 解決不能(循環や欠損)→ 残り全員 G1
+			for a in remaining:
+				gen_of[a.id] = 1
+			break
+	var max_g: int = 1
+	for v in gen_of.values():
+		max_g = max(max_g, int(v))
+	return max_g
 
 func _update_agent_detail() -> void:
 	var panel := get_node_or_null(^"UI/AgentDetailPanel") as Panel

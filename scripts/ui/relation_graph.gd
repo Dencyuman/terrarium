@@ -13,8 +13,11 @@ const EDGE_MIN_WEIGHT: int = 3   # 弱いエッジは非表示
 
 var agents: Array = []
 var selected_agent_id: int = -1
+# 死者を circle 上に表示するか。false にすると死者は完全に隠れ、生者のみで円配置し直す。
+var include_dead: bool = true
 var font_bold: SystemFont
 var font_regular: SystemFont
+var _dead_checkbox: CheckBox
 
 func _ready() -> void:
 	font_bold = SystemFont.new()
@@ -25,6 +28,29 @@ func _ready() -> void:
 	font_regular = SystemFont.new()
 	font_regular.font_names = font_bold.font_names
 	font_regular.font_weight = 500
+	_dead_checkbox = CheckBox.new()
+	_dead_checkbox.text = "死者を含める"
+	_dead_checkbox.button_pressed = include_dead
+	_dead_checkbox.position = Vector2(VIEW_WIDTH - 150, 24)
+	_dead_checkbox.add_theme_font_size_override("font_size", 11)
+	_dead_checkbox.toggled.connect(_on_include_dead_toggled)
+	add_child(_dead_checkbox)
+
+func _on_include_dead_toggled(enabled: bool) -> void:
+	if enabled == include_dead:
+		return
+	include_dead = enabled
+	queue_redraw()
+
+# 実際に円上に描画する対象 agents。include_dead=false なら生者のみ。
+func _display_agents() -> Array:
+	if include_dead:
+		return agents
+	var out: Array = []
+	for a in agents:
+		if a.is_alive():
+			out.append(a)
+	return out
 
 func set_agents(a: Array) -> void:
 	agents = a
@@ -43,16 +69,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
 		return
-	if agents.is_empty():
+	var disp: Array = _display_agents()
+	if disp.is_empty():
 		return
 	var local := to_local(mb.global_position)
 	if local.x < 0 or local.y < 0 or local.x >= VIEW_WIDTH or local.y >= VIEW_HEIGHT:
 		return
 	var positions := _compute_positions()
-	for i in agents.size():
+	for i in disp.size():
 		var pos: Vector2 = positions[i]
 		if local.distance_to(pos) <= NODE_RADIUS + 2:
-			agent_clicked.emit(agents[i].id)
+			agent_clicked.emit(disp[i].id)
 			get_viewport().set_input_as_handled()
 			return
 
@@ -90,16 +117,18 @@ func _agent_name(id: int) -> String:
 func _compute_positions() -> Array:
 	var center := Vector2(VIEW_WIDTH / 2.0, VIEW_HEIGHT / 2.0 + 20)
 	var radius := min(VIEW_WIDTH, VIEW_HEIGHT) * 0.34
-	var count := agents.size()
+	var disp: Array = _display_agents()
+	var count := disp.size()
 	var positions: Array = []
 	for i in count:
-		var angle := TAU * float(i) / float(count) - PI / 2.0
+		var angle := TAU * float(i) / float(max(1, count)) - PI / 2.0
 		positions.append(center + Vector2(cos(angle) * radius, sin(angle) * radius))
 	return positions
 
 func _index_of_id(target_id: int) -> int:
-	for i in agents.size():
-		if agents[i].id == target_id:
+	var disp: Array = _display_agents()
+	for i in disp.size():
+		if disp[i].id == target_id:
 			return i
 	return -1
 
@@ -121,9 +150,10 @@ func _compute_related_ids() -> Dictionary:
 	return out
 
 func _draw_edges(positions: Array, related_ids: Dictionary) -> void:
+	var disp: Array = _display_agents()
 	var drawn: Dictionary = {}
-	for i in agents.size():
-		var a: Agent = agents[i]
+	for i in disp.size():
+		var a: Agent = disp[i]
 		for other_id in a.relations.keys():
 			var j: int = _index_of_id(other_id)
 			if j < 0 or j == i:
@@ -133,7 +163,7 @@ func _draw_edges(positions: Array, related_ids: Dictionary) -> void:
 				continue
 			drawn[key_str] = true
 			var a_aff: int = int(a.relations[other_id].get("affection", 0))
-			var b: Agent = agents[j]
+			var b: Agent = disp[j]
 			var b_aff: int = 0
 			if b.relations.has(a.id):
 				b_aff = int(b.relations[a.id].get("affection", 0))
@@ -187,36 +217,50 @@ func _draw_edge_label(p1: Vector2, p2: Vector2, me: Agent, other: Agent) -> void
 	draw_string(font_regular, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, EDGE_LABEL_FONT_SIZE, Color(0.92, 0.90, 0.86, 0.95))
 
 func _draw_nodes(positions: Array, related_ids: Dictionary) -> void:
-	var count := agents.size()
-	for i in count:
+	var disp: Array = _display_agents()
+	for i in disp.size():
 		var pos: Vector2 = positions[i]
-		var agent: Agent = agents[i]
-		var color: Color = agent.badge_color()
+		var agent: Agent = disp[i]
 		var is_selected: bool = agent.id == selected_agent_id
 		var is_related: bool = related_ids.has(agent.id)
-		# 選択モードで関係なし → フェード
+		# 選択モードで関係なし → dim
+		var dim: float = 1.0
 		if selected_agent_id >= 0 and not is_related:
-			color.a = 0.2
-		if not agent.is_alive():
-			color.a *= 0.5
-		draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.35 * color.a))
-		draw_circle(pos, NODE_RADIUS, color)
-		# 選択中は強調リング
-		if is_selected:
-			draw_arc(pos, NODE_RADIUS + 5, 0, TAU, 48, Color(0.98, 0.82, 0.28, 1.0), 2.5)
-			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 1.0), 2.0)
+			dim = 0.2
+		if agent.is_alive():
+			var color: Color = agent.badge_color()
+			color.a *= dim
+			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.35 * dim))
+			draw_circle(pos, NODE_RADIUS, color)
+			if is_selected:
+				draw_arc(pos, NODE_RADIUS + 5, 0, TAU, 48, Color(0.98, 0.82, 0.28, 1.0), 2.5)
+				draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 1.0), 2.0)
+			else:
+				draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.8 * dim), 1.5)
+			_draw_node_label(agent.agent_name, pos, Color(1, 1, 1, 0.95 * dim))
 		else:
-			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.8 * color.a), 1.5)
-		var ch: String = agent.agent_name
-		var text_size: Vector2 = font_bold.get_string_size(ch, HORIZONTAL_ALIGNMENT_CENTER, -1, LABEL_FONT_SIZE)
-		var ascent: float = font_bold.get_ascent(LABEL_FONT_SIZE)
-		var descent: float = font_bold.get_descent(LABEL_FONT_SIZE)
-		var baseline := Vector2(
-			pos.x - text_size.x / 2.0,
-			pos.y + (ascent - descent) / 2.0
-		)
-		var text_color := Color(1, 1, 1, 0.95 * color.a)
-		draw_string(font_bold, baseline, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT_SIZE, text_color)
+			# 死者: world_view / family_tree と同様に グレー + ✕ で描画。
+			var base := Color(0.32, 0.32, 0.34, 0.85 * dim)
+			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.25 * dim))
+			draw_circle(pos, NODE_RADIUS, base)
+			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.7 * dim), 1.0)
+			_draw_node_label(agent.agent_name, pos, Color(0.75, 0.72, 0.68, 0.70 * dim))
+			var r: float = NODE_RADIUS - 4
+			var x_color := Color(0.88, 0.88, 0.88, 0.70 * dim)
+			draw_line(pos + Vector2(-r, -r), pos + Vector2(r, r), x_color, 1.5)
+			draw_line(pos + Vector2(-r, r), pos + Vector2(r, -r), x_color, 1.5)
+			if is_selected:
+				draw_arc(pos, NODE_RADIUS + 5, 0, TAU, 48, Color(0.98, 0.82, 0.28, 1.0), 2.5)
+
+func _draw_node_label(text: String, pos: Vector2, color: Color) -> void:
+	var text_size: Vector2 = font_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, LABEL_FONT_SIZE)
+	var ascent: float = font_bold.get_ascent(LABEL_FONT_SIZE)
+	var descent: float = font_bold.get_descent(LABEL_FONT_SIZE)
+	var baseline := Vector2(
+		pos.x - text_size.x / 2.0,
+		pos.y + (ascent - descent) / 2.0
+	)
+	draw_string(font_bold, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT_SIZE, color)
 
 func _draw_legend() -> void:
 	var lx := 20.0

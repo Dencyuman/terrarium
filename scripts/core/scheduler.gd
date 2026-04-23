@@ -843,6 +843,7 @@ func _apply_look(agent: Agent, action: Action) -> void:
 #   - target が生存していること
 #   - 自分自身でないこと
 #   - 異性(gender が異なる)
+#   - 両者とも第二次性徴に達していること (age_days >= puberty_age_days)
 #   - 隣接(Chebyshev 距離 1)
 #   - stamina コストを払える
 # 合意は物理制約ではなく社会通念。harness は強制しない(暴力的生殖も物理的に成立する)。
@@ -858,6 +859,9 @@ func _apply_reproduce_with(agent: Agent, action: Action) -> void:
 		return
 	if target.gender == agent.gender:
 		action.failure_note = "same_gender"
+		return
+	if agent.age_days < puberty_age_days or target.age_days < puberty_age_days:
+		action.failure_note = "not_mature"
 		return
 	if not _is_adjacent(agent, target):
 		action.failure_note = "not_adjacent"

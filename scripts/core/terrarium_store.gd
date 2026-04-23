@@ -10,6 +10,11 @@ extends RefCounted
 
 const DB_PATH: String = "user://terrarium.db"
 
+# デフォルトの種族傾向テキスト。ハーネス原則上の「生物学的傾き」の記述であり、
+# 規範命令ではない(「~せよ」ではなく「~する傾向が身体に刻まれている」形式)。
+# 各テラリウムは editor でこれを自由に書き換えて実験集団を差し替えられる。
+const DEFAULT_DISPOSITION: String = """あなた達は有限な寿命を持つ生命体である。食料確保・他者との交流・生殖を通じて種を繋いできた経緯が身体に刻まれている。飢餓や脅威には敏感に反応し、性欲が高まれば異性との接触を求める。逆に同性間の性的な接触は好まない。これは意識的な規範ではなく、本能的な身体の傾きである。"""
+
 var db = null                  # SQLite (godot-sqlite のクラス、動的取得)
 var current_run_id: int = -1
 var current_terrarium_id: int = -1
@@ -48,9 +53,12 @@ func _ensure_schema() -> void:
 			tick_per_day INTEGER NOT NULL,
 			terrain_json TEXT,
 			cast_json TEXT NOT NULL,
-			config_json TEXT NOT NULL
+			config_json TEXT NOT NULL,
+			disposition TEXT
 		)
 	""")
+	# 既存 DB 用のマイグレーション: disposition カラムが無い場合は追加。
+	db.query("ALTER TABLE terrariums ADD COLUMN disposition TEXT")
 	db.query("""
 		CREATE TABLE IF NOT EXISTS runs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +130,7 @@ func ensure_default_terrarium(config: Dictionary, names_data: Dictionary) -> int
 		"terrain_json": "",   # null だと seed から再生成される約束
 		"cast_json": JSON.stringify(cast),
 		"config_json": JSON.stringify(config),
+		"disposition": DEFAULT_DISPOSITION,
 	})
 	var rows2: Array = db.select_rows("terrariums", "title = 'default'", ["id"])
 	current_terrarium_id = int(rows2[0]["id"]) if rows2.size() > 0 else -1
@@ -184,6 +193,7 @@ func create_terrarium(data: Dictionary) -> int:
 		"terrain_json": str(data.get("terrain_json", "")),
 		"cast_json": str(data.get("cast_json", "[]")),
 		"config_json": str(data.get("config_json", "{}")),
+		"disposition": str(data.get("disposition", DEFAULT_DISPOSITION)),
 	})
 	db.query("SELECT last_insert_rowid() AS id")
 	var res: Array = db.query_result
@@ -195,7 +205,7 @@ func update_terrarium(terrarium_id: int, data: Dictionary) -> bool:
 	if not is_terrarium_editable(terrarium_id):
 		return false
 	var fields: Dictionary = {}
-	for k in ["title", "description", "world_size", "world_seed", "tick_per_day", "terrain_json", "cast_json", "config_json"]:
+	for k in ["title", "description", "world_size", "world_seed", "tick_per_day", "terrain_json", "cast_json", "config_json", "disposition"]:
 		if data.has(k):
 			fields[k] = data[k]
 	if fields.is_empty():
@@ -276,6 +286,21 @@ func list_events_for_run(run_id: int, agent_name_filter: Array = [], include_fai
 				continue
 		out.append(row)
 	return out
+
+# resume 時の履歴再構築用。action + event を時系列全件で返す。
+# agent_id を含む点が list_events_for_run との違い。
+# 呼び出し側 (main.gd) で LOG_MAX / CHRONICLE_MAX によるロール cap を効かせるため、
+# ここでは件数制限しない(1 run あたり数千件程度なら JSON parse のオーバーヘッド許容内)。
+func list_events_for_resume(run_id: int) -> Array:
+	if db == null:
+		return []
+	db.query("""
+		SELECT tick, ts, type, agent_id, agent_name, kind, data_json
+		FROM events
+		WHERE run_id = %d AND type IN ('action', 'event')
+		ORDER BY id ASC
+	""" % run_id)
+	return db.query_result.duplicate()
 
 func list_run_agent_names(run_id: int) -> Array:
 	if db == null:

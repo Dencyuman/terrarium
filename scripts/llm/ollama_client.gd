@@ -93,7 +93,7 @@ func _start_request(task: Dictionary) -> void:
 	var http := HTTPRequest.new()
 	add_child(http)
 	http.timeout = float(DEFAULT_TIMEOUT_SEC)
-	var sys_prompt: String = PromptBuilder.system_prompt()
+	var sys_prompt: String = PromptBuilder.system_prompt(disposition)
 	# Gemma 4 のネイティブ system ロール対応を活かすため /api/chat を使用。
 	# Gemma 4 は think がデフォルト ON のため、明示的に OFF にしないと 1 リクエスト 20 秒を超える。
 	# tools: Ollama の tool use 経路。Gemma 4 (gemma4:e4b) は capabilities に "tools" を持つため

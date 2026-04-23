@@ -1,12 +1,15 @@
 class_name FamilyTreeView
 extends Node2D
 
+signal agent_clicked(agent_id: int)
+
 const VIEW_WIDTH: int = 720
 const VIEW_HEIGHT: int = 720
 const NODE_RADIUS: int = 16
 const LABEL_FONT_SIZE: int = 11
 
 var agents: Array = []
+var selected_agent_id: int = -1
 var font_bold: SystemFont
 
 # 計算済みの世代レイアウト: generation_idx -> Array[Agent]
@@ -29,6 +32,62 @@ func set_agents(a: Array) -> void:
 	agents = a
 	_compute_layout()
 	queue_redraw()
+
+func set_selected_agent(id: int) -> void:
+	if id != selected_agent_id:
+		selected_agent_id = id
+		queue_redraw()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
+		return
+	if _positions.is_empty():
+		return
+	var local := to_local(mb.global_position)
+	if local.x < 0 or local.y < 0 or local.x >= VIEW_WIDTH or local.y >= VIEW_HEIGHT:
+		return
+	for a in agents:
+		if not _positions.has(a.id):
+			continue
+		var pos: Vector2 = _positions[a.id]
+		if local.distance_to(pos) <= NODE_RADIUS + 2:
+			agent_clicked.emit(a.id)
+			get_viewport().set_input_as_handled()
+			return
+
+# 選択されたエージェントと血縁関係にある id 集合を返す。
+# 血縁 = parent_ids を無向エッジとみなしたときの連結成分 (先祖・子孫・兄弟姉妹・いとこ等すべて含む)。
+# 選択なしなら空 Dictionary (全員ハイライト扱い)。
+func _compute_kin_ids() -> Dictionary:
+	var kin: Dictionary = {}
+	if selected_agent_id < 0:
+		return kin
+	# 隣接表 (id -> Array[id])
+	var adj: Dictionary = {}
+	for a in agents:
+		adj[a.id] = []
+	for a in agents:
+		for pid in a.parent_ids:
+			if adj.has(pid):
+				adj[a.id].append(pid)
+				adj[pid].append(a.id)
+	# BFS
+	var queue: Array = [selected_agent_id]
+	kin[selected_agent_id] = true
+	while not queue.is_empty():
+		var cur: int = queue.pop_front()
+		if not adj.has(cur):
+			continue
+		for nb in adj[cur]:
+			if not kin.has(nb):
+				kin[nb] = true
+				queue.append(nb)
+	return kin
 
 # 世代分類: parent_ids が空 = G1、parent_ids のうち世代が確定した祖先の最大世代 + 1 = 自分の世代。
 # 親が agents リストに無い(誕生時の親がすでに vanished なケース)は無視。
@@ -92,7 +151,8 @@ func _compute_layout() -> void:
 	var bottom_y: float = VIEW_HEIGHT - 80.0
 	var rows: int = _gen_rows.size()
 	var gen_step: float = 120.0 if rows <= 5 else max(80.0, (bottom_y - top_y) / float(max(1, rows - 1)))
-	var margin: float = 40.0
+	# 左マージンを広めに取って左端の Gx ラベル(x=20)と node が被らないようにする。
+	var margin: float = 70.0
 	for g in range(rows):
 		var row: Array = _gen_rows[g]
 		var count: int = row.size()
@@ -112,9 +172,10 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, VIEW_WIDTH, VIEW_HEIGHT), Color(0.137, 0.153, 0.184, 1), true)
 	draw_rect(Rect2(0, 0, VIEW_WIDTH, VIEW_HEIGHT), Color(0.208, 0.227, 0.263, 1), false, 1.0)
 	_draw_header()
-	_draw_parent_child_edges()
+	var kin := _compute_kin_ids()
+	_draw_parent_child_edges(kin)
 	_draw_generation_labels()
-	_draw_nodes()
+	_draw_nodes(kin)
 	_draw_legend()
 
 func _draw_header() -> void:
@@ -145,9 +206,10 @@ func _draw_generation_labels() -> void:
 		draw_string(font_bold, Vector2(20, y + 5), "G%d" % (g + 1),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, gen_color)
 
-func _draw_parent_child_edges() -> void:
+func _draw_parent_child_edges(kin: Dictionary) -> void:
 	var edge_alive := Color(0.74, 0.73, 0.70, 0.65)
 	var edge_dead := Color(0.50, 0.50, 0.52, 0.30)
+	var has_selection: bool = not kin.is_empty()
 	for a in agents:
 		if not _positions.has(a.id):
 			continue
@@ -162,30 +224,43 @@ func _draw_parent_child_edges() -> void:
 					parent_alive = p.is_alive()
 					break
 			var col: Color = edge_alive if (a.is_alive() and parent_alive) else edge_dead
+			# 選択時: 両端が血縁集合に含まれるエッジのみ通常描画、それ以外は減光
+			if has_selection and not (kin.has(a.id) and kin.has(pid)):
+				col.a *= 0.18
 			draw_line(parent_pos, child_pos, col, 1.2)
 
-func _draw_nodes() -> void:
+func _draw_nodes(kin: Dictionary) -> void:
+	var has_selection: bool = not kin.is_empty()
 	for a in agents:
 		if not _positions.has(a.id):
 			continue
 		var pos: Vector2 = _positions[a.id]
+		var dim: float = 1.0
+		if has_selection and not kin.has(a.id):
+			dim = 0.20
 		if a.is_alive():
 			var color: Color = a.badge_color()
-			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.35))
+			color.a *= dim
+			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.35 * dim))
 			draw_circle(pos, NODE_RADIUS, color)
-			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.8), 1.3)
-			_draw_label(a.agent_name, pos, Color(1, 1, 1, 0.95))
+			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.8 * dim), 1.3)
+			_draw_label(a.agent_name, pos, Color(1, 1, 1, 0.95 * dim))
+			# 選択中エージェントの強調リング
+			if has_selection and a.id == selected_agent_id:
+				draw_arc(pos, NODE_RADIUS + 3, 0, TAU, 48, Color(0.98, 0.82, 0.28, 0.95), 2.0)
 		else:
-			var base := Color(0.32, 0.32, 0.34, 0.85)
-			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.25))
+			var base := Color(0.32, 0.32, 0.34, 0.85 * dim)
+			draw_circle(pos + Vector2(0, 2), NODE_RADIUS, Color(0, 0, 0, 0.25 * dim))
 			draw_circle(pos, NODE_RADIUS, base)
-			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.7), 1.0)
-			_draw_label(a.agent_name, pos, Color(0.75, 0.72, 0.68, 0.70))
+			draw_arc(pos, NODE_RADIUS, 0, TAU, 48, Color(0.10, 0.12, 0.16, 0.7 * dim), 1.0)
+			_draw_label(a.agent_name, pos, Color(0.75, 0.72, 0.68, 0.70 * dim))
 			# ✕ 印
 			var r: float = NODE_RADIUS - 3
-			var x_color := Color(0.88, 0.88, 0.88, 0.70)
+			var x_color := Color(0.88, 0.88, 0.88, 0.70 * dim)
 			draw_line(pos + Vector2(-r, -r), pos + Vector2(r, r), x_color, 1.5)
 			draw_line(pos + Vector2(-r, r), pos + Vector2(r, -r), x_color, 1.5)
+			if has_selection and a.id == selected_agent_id:
+				draw_arc(pos, NODE_RADIUS + 3, 0, TAU, 48, Color(0.98, 0.82, 0.28, 0.95), 2.0)
 
 func _draw_label(text: String, center: Vector2, color: Color) -> void:
 	var text_size: Vector2 = font_bold.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, LABEL_FONT_SIZE)
