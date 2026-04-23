@@ -50,7 +50,7 @@
     "speak_stamina": 2,
     "wait_stamina_restore": 10,
     "look_stamina": 2,
-    "elder_age_days": 6,
+    "elder_age_days": 4,
     "elder_health_drain": 2,
     "reproduce_stamina_cost": 20,
     "reproduce_hunger_cost": 10,

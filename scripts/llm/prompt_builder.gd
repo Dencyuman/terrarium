@@ -452,6 +452,7 @@ static func _vision(agent: Agent, world: World, resources: ResourceField, agents
 				var other: Agent = by_pos[Vector2i(x, y)]
 				if other.is_alive():
 					entry["agent"] = other.agent_name
+					entry["gender"] = other.gender
 					entry["hunger"] = other.hunger
 					entry["health"] = other.health
 					entry["stamina"] = other.stamina
@@ -460,5 +461,6 @@ static func _vision(agent: Agent, world: World, resources: ResourceField, agents
 				else:
 					# 遺体: 物理的にその場に残る。give/attack/embrace の対象にはならない
 					entry["corpse"] = other.agent_name
+					entry["gender"] = other.gender
 			out.append(entry)
 	return out
