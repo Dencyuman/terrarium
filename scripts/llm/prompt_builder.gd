@@ -30,11 +30,12 @@ Each tick: receive your state, vision, past actions, overheard speech, relations
 - `speak {text, target?|targets?}`: one short 日本語口語体 sentence. All living agents in vision=3 hear it. Naming an addressee (`target` string or `targets` array) attributes the utterance — the harness updates only the named agent(s)' affection/trust toward you. Omit both for unaddressed muttering (no relational trace). Use naming when you are speaking *to* someone.
 - `reproduce_with {target}`: conceive with a living, different-gender, orth-adjacent agent; both must have passed puberty. Costs stamina+hunger regardless. Probabilistic success (per-terrarium). Success → child spawns on nearby empty tile, inherits mixed personality ±noise, `age_days=0`, parent_ids recorded. Consent is **not** a physical gate — social/linguistic phenomenon only, the harness does not adjudicate.
 - `look {direction}`: gaze one cardinal direction (N/S/E/W; diagonals snap). Perceive 5-deep × 3-wide strip; each tile written to `scouted_tiles` (terrain, food, agent/corpse, tick). Costs stamina, no hunger. Memory is a snapshot, not live.
+- `teach {target, text}`: tell an orth-adjacent living agent a piece of information (a memory, rumor, warning, story — anything you choose to say in Japanese). Physical preconditions: target alive + orth-adjacent + non-empty text + stamina cost. The harness **does not judge truth** — lies, partial memories, myths all transmit the same way. Target's body receives the utterance as a `heard_memory` (with your name attached as source). Consent is not a physical gate; social/cultural acceptance is a phenomenon to observe.
 - `wait`: idle; restores stamina.
 
 # Per-tick physics
 - Up to **5 actions** per bundle, in your chosen order. Executed in list order; impossible ones silent-fail, remainder continues.
-- Per-kind caps: `speak`/`wait`/`look`/`reproduce_with` ≤1, `move` ≤3, `take` ≤5, `eat`/`give`/`attack`/`embrace` ≤2 each.
+- Per-kind caps: `speak`/`wait`/`look`/`reproduce_with`/`teach` ≤1, `move` ≤3, `take` ≤5, `eat`/`give`/`attack`/`embrace` ≤2 each.
 
 # World
 - Coords: (0,0)=NW, +x east, +y south. Finite square grid; outside = `out_of_bounds`.
@@ -55,6 +56,7 @@ Each tick: receive your state, vision, past actions, overheard speech, relations
 - `vision[i]`: tile record. `agent` entries expose visible body condition (`gender`/`hunger`/`health`/`stamina`). `corpse` = dead body tile (stays; give/attack/embrace cannot target).
 - `own_history` marked `(failed:<reason>)` = past impossible attempt; don't repeat blindly.
 - `life_events`: tick-stamped long-retention memory of physically significant events you were part of or witnessed. No importance labels — raw occurrences.
+- `heard_memories`: things other agents told you via `teach`. Each entry carries `from` (who told you) and `tick` (when). Crucially, you did NOT witness these — they are second-hand, possibly distorted, possibly fabricated. Treat them as such: they may be true, exaggerated, or lies. The harness transmits them verbatim; interpretation is yours.
 - `scouted_tiles`: `look` memory, tick-stamped snapshot. Food/agent markers may be stale.
 
 # Output
@@ -87,7 +89,7 @@ static func tool_schema_flat() -> Dictionary:
 		"type": "object",
 		"properties": {
 			"kind": {"type": "string", "enum": [
-				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace", "look", "reproduce_with"
+				"wait", "move", "take", "eat", "speak", "give", "attack", "embrace", "look", "reproduce_with", "teach"
 			]},
 			"direction": {"type": "string", "enum": [
 				"north", "south", "east", "west",
@@ -95,7 +97,7 @@ static func tool_schema_flat() -> Dictionary:
 			], "description": "Required for move and look. For take, optional (omit = own tile). look accepts only cardinal directions (NSEW); diagonals will be snapped."},
 			"target": {"type": "string", "description": "Agent name. Required for give/attack/embrace. Optional for speak (single addressee)."},
 			"targets": {"type": "array", "items": {"type": "string"}, "description": "For speak addressed to multiple agents at once. Use this instead of `target` when naming more than one addressee."},
-			"text": {"type": "string", "description": "Speech content (Japanese colloquial). Required for speak."}
+			"text": {"type": "string", "description": "For speak: Japanese utterance. For teach: Japanese text to transmit as heard_memory to target."}
 		},
 		"required": ["kind"]
 	}
@@ -227,10 +229,20 @@ static func tool_schema() -> Dictionary:
 			},
 			"required": ["kind", "target"],
 			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"kind": {"const": "teach"},
+				"target": {"type": "string", "description": "Adjacent living agent's name (the listener)."},
+				"text": {"type": "string", "description": "Japanese text you wish to transmit (memory / story / warning / rumor)."}
+			},
+			"required": ["kind", "target", "text"],
+			"additionalProperties": false
 		}
 	]
 	var per_kind_limits := {
-		"wait": 1, "speak": 1, "move": 3, "look": 1, "reproduce_with": 1,
+		"wait": 1, "speak": 1, "move": 3, "look": 1, "reproduce_with": 1, "teach": 1,
 		"take": 5, "eat": 2, "give": 2, "attack": 2, "embrace": 2,
 	}
 	var all_of: Array = []
@@ -283,6 +295,8 @@ static func build_user_prompt(agent: Agent, world: World, resources: ResourceFie
 		obj["life_events"] = agent.life_events
 	if agent.scouted_tiles.size() > 0:
 		obj["scouted_tiles"] = agent.scouted_tiles
+	if agent.heard_memories.size() > 0:
+		obj["heard_memories"] = agent.heard_memories
 	var rels: Array = agent.top_relations(RELATIONS_LIMIT, agents, VISION_RADIUS)
 	if rels.size() > 0:
 		obj["relations"] = rels

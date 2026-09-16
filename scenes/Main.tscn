@@ -448,6 +448,12 @@ theme_override_font_sizes/font_size = 10
 text = "分与"
 toggle_mode = true
 
+[node name="F6" type="Button" parent="UI/EventChroniclePanel/Filters"]
+custom_minimum_size = Vector2(40, 24)
+theme_override_font_sizes/font_size = 10
+text = "教育"
+toggle_mode = true
+
 [node name="EmptyState" type="Label" parent="UI/EventChroniclePanel"]
 offset_left = 16.0
 offset_top = 76.0
@@ -462,7 +468,8 @@ text = "シミュレーション開始後、重大イベントがここに tick 
 · 🕊 死亡
 · 💢 戦闘
 · 💕 抱擁
-· 📤 分与"
+· 📤 分与
+· 🎓 教育"
 
 [node name="FooterBar" type="Panel" parent="UI"]
 offset_left = 0.0

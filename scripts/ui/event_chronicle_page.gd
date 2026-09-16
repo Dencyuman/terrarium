@@ -9,8 +9,8 @@ signal filter_requested(kind: String)
 
 const VIEW_WIDTH: int = 720
 const VIEW_HEIGHT: int = 720
-const FILTER_KINDS: Array = ["all", "birth", "death", "attack", "embrace", "give"]
-const FILTER_LABELS: Array = ["全て", "誕生", "死亡", "戦闘", "抱擁", "分与"]
+const FILTER_KINDS: Array = ["all", "birth", "death", "attack", "embrace", "give", "teach"]
+const FILTER_LABELS: Array = ["全て", "誕生", "死亡", "戦闘", "抱擁", "分与", "教育"]
 const FILTER_ROW_Y: float = 76.0
 
 var agents: Array = []
@@ -86,6 +86,8 @@ func _line(e: Dictionary) -> String:
 			icon = "📤"; color = "#6acfb0"
 		"embrace":
 			icon = "💕"; color = "#e0a0c0"
+		"teach":
+			icon = "🎓"; color = "#6ebfc0"
 		_:
 			icon = "·"; color = "#8a8680"
 	var tick_str := "[color=#6a6660]t%04d[/color]" % int(e.get("tick", 0))

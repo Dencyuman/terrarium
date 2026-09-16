@@ -1,7 +1,7 @@
 class_name Action
 extends RefCounted
 
-enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE, LOOK, REPRODUCE_WITH }
+enum Kind { WAIT, MOVE, TAKE, SPEAK, EAT, GIVE, ATTACK, EMBRACE, LOOK, REPRODUCE_WITH, TEACH }
 
 var kind: int = Kind.WAIT
 var direction: Vector2i = Vector2i.ZERO
@@ -88,6 +88,16 @@ static func speak(text: String, target_ids: Array[int] = [] as Array[int], reaso
 	a.reason = reason_
 	return a
 
+static func teach(target_id_: int, text: String, reason_: String = "") -> Action:
+	# Phase 6: 口伝・教育。隣接する相手に特定のテキストを語り聞かせる。
+	# 内容の真偽はハーネスが関知せず、LLM が自由に生成する。
+	var a := Action.new()
+	a.kind = Kind.TEACH
+	a.target_id = target_id_
+	a.speech_text = text
+	a.reason = reason_
+	return a
+
 func kind_label() -> String:
 	match kind:
 		Kind.WAIT: return "wait"
@@ -100,4 +110,5 @@ func kind_label() -> String:
 		Kind.EMBRACE: return "embrace"
 		Kind.LOOK: return "look"
 		Kind.REPRODUCE_WITH: return "reproduce_with"
+		Kind.TEACH: return "teach"
 		_: return "?"

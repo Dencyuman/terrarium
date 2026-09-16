@@ -16,24 +16,23 @@ run/main_scene="res://scenes/TopPage.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+GameContext="*res://scripts/core/game_context.gd"
+
 [display]
 
 window/size/viewport_width=1440
 window/size/viewport_height=900
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
-
-[gui]
-
-theme/custom="res://assets/theme.tres"
-
-[autoload]
-
-GameContext="*res://scripts/core/game_context.gd"
 
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot-sqlite/plugin.cfg")
+
+[gui]
+
+theme/custom="res://assets/theme.tres"
 
 [rendering]
 

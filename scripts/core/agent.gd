@@ -54,6 +54,11 @@ var life_events: Array[String] = []
 # 各 entry = {tick: int, pos: [x,y], terrain: str, food?: bool, agent?: str, corpse?: str}
 var scouted_tiles: Array = []
 const SCOUTED_TILES_MAX: int = 24
+# Phase 6: 他者から teach アクションで伝えられた記憶(口伝)。
+# 各 entry = {tick: int, from_id: int, from_name: str, text: str}
+# 直接体験した life_events と区別され、「~から聞いた話」として保持される。
+var heard_memories: Array = []
+const HEARD_MEMORIES_MAX: int = 16
 
 func _init(id_: int = 0) -> void:
 	id = id_
@@ -132,6 +137,16 @@ func append_life_event(current_tick: int, text: String) -> void:
 	life_events.append("t%d %s" % [current_tick, text])
 	while life_events.size() > LIFE_EVENTS_MAX:
 		life_events.pop_front()
+
+func append_heard_memory(current_tick: int, from_id: int, from_name: String, text: String) -> void:
+	heard_memories.append({
+		"tick": current_tick,
+		"from_id": from_id,
+		"from_name": from_name,
+		"text": text,
+	})
+	while heard_memories.size() > HEARD_MEMORIES_MAX:
+		heard_memories.pop_front()
 
 func append_interaction(other_id: int, current_tick: int, text: String, limit: int = 8) -> void:
 	# ハーネスが物理イベントを客観的に記録する自由テキスト。解釈はしない。

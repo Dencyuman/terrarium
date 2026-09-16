@@ -118,6 +118,14 @@ static func _parse_one(d: Dictionary, fallback_reason: String, agents: Array) ->
 			if tid4 < 0:
 				return Action.wait("parse: reproduce_with missing target")
 			return Action.reproduce_with(tid4, reason)
+		"teach":
+			var tid5: int = _parse_single_target(d.get("target", null), agents)
+			if tid5 < 0:
+				return Action.wait("parse: teach missing target")
+			var teach_text: String = str(d.get("text", "")).strip_edges()
+			if teach_text == "":
+				return Action.wait("parse: teach missing text")
+			return Action.teach(tid5, teach_text, reason)
 		_:
 			return null
 

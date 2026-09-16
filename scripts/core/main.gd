@@ -56,7 +56,7 @@ var chronicle_entries: Array[Dictionary] = []
 var chronicle_filter: String = "all"
 # フィルタボタン node 名 (UI/EventChroniclePanel/Filters 配下) → 対応 kind
 const CHRONICLE_FILTER_MAP := {
-	"F0": "all", "F1": "birth", "F2": "death", "F3": "attack", "F4": "embrace", "F5": "give",
+	"F0": "all", "F1": "birth", "F2": "death", "F3": "attack", "F4": "embrace", "F5": "give", "F6": "teach",
 }
 var decide_progress_str: String = "—"
 var selected_agent_id: int = -1
@@ -509,6 +509,7 @@ func _serialize_agent(a: Agent) -> Dictionary:
 		"parent_ids": a.parent_ids.duplicate(),
 		"libido": a.libido,
 		"aggression_pressure": a.aggression_pressure,
+		"heard_memories": a.heard_memories.duplicate(true),
 	}
 
 func _apply_state_snapshot(snap: Dictionary) -> void:
@@ -600,6 +601,12 @@ func _deserialize_agent_state(a: Agent, dump: Dictionary) -> void:
 			a.parent_ids.append(int(p))
 	a.libido = int(dump.get("libido", a.libido))
 	a.aggression_pressure = int(dump.get("aggression_pressure", a.aggression_pressure))
+	var hm = dump.get("heard_memories", [])
+	a.heard_memories = []
+	if hm is Array:
+		for e in hm:
+			if e is Dictionary:
+				a.heard_memories.append(e.duplicate(true))
 
 func _end_current_run() -> void:
 	if run_logger == null or scheduler == null:
@@ -778,6 +785,9 @@ func _action_from_event_data(data: Dictionary) -> Action:
 			return Action.look(direction, reason)
 		"reproduce_with":
 			return Action.reproduce_with(target_id, reason)
+		"teach":
+			var tch_text: String = str(data.get("speech_text", ""))
+			return Action.teach(target_id, tch_text, reason)
 		"speak":
 			var text: String = str(data.get("speech_text", ""))
 			var raw_ids = data.get("speech_target_ids", [])
@@ -1041,6 +1051,12 @@ func _append_log_entry(agent: Agent, act: Action) -> void:
 			var rp_name := rp_target.agent_name if rp_target != null else "?"
 			line = "%s  [color=%s][b]%s[/b][/color] [color=#d893b8]~ reproduce ~[/color] [b]%s[/b]" % [
 				tick_str, hex, agent.agent_name, rp_name
+			]
+		Action.Kind.TEACH:
+			var tc_target := _get_agent_by_id(act.target_id)
+			var tc_name := tc_target.agent_name if tc_target != null else "?"
+			line = "%s  [color=%s][b]%s[/b][/color] [color=#6ebfc0]→ teach →[/color] [b]%s[/b]  [color=#e6e4de]「%s」[/color]" % [
+				tick_str, hex, agent.agent_name, tc_name, act.speech_text
 			]
 		_:
 			return
@@ -1341,6 +1357,8 @@ func _chronicle_icon(kind: String) -> String:
 			return "📤"
 		"embrace":
 			return "💕"
+		"teach":
+			return "🎓"
 		_:
 			return "·"
 
@@ -1358,6 +1376,8 @@ func _chronicle_color(kind: String) -> String:
 			return "#6acfb0"
 		"embrace":
 			return "#e0a0c0"
+		"teach":
+			return "#6ebfc0"
 		_:
 			return "#8a8680"
 

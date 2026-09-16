@@ -34,6 +34,7 @@ const PER_KIND_MAX := {
 	Action.Kind.SPEAK: 1,
 	Action.Kind.LOOK: 1,
 	Action.Kind.REPRODUCE_WITH: 1,
+	Action.Kind.TEACH: 1,
 }
 
 const LOOK_LENGTH: int = 5   # 覗き見る奥行き(方向 5 マス)
@@ -68,6 +69,8 @@ var attack_stamina_target_drain: int = 3
 var embrace_stamina_cost: int = 5
 var embrace_stamina_gift: int = 3
 var speak_stamina: int = 2
+# Phase 6: 教育コスト。speak より重いが attack ほどではない (口伝は濃密な伝達行為)
+var teach_stamina: int = 3
 var wait_stamina_restore: int = 10
 var look_stamina: int = 2
 # Phase 5 加齢 / 老衰
@@ -162,6 +165,7 @@ func configure_costs(cfg: Dictionary) -> void:
 	embrace_stamina_cost = int(cfg.get("embrace_stamina_cost", embrace_stamina_cost))
 	embrace_stamina_gift = int(cfg.get("embrace_stamina_gift", embrace_stamina_gift))
 	speak_stamina = int(cfg.get("speak_stamina", speak_stamina))
+	teach_stamina = int(cfg.get("teach_stamina", teach_stamina))
 	wait_stamina_restore = int(cfg.get("wait_stamina_restore", wait_stamina_restore))
 	look_stamina = int(cfg.get("look_stamina", look_stamina))
 	elder_age_days = int(cfg.get("elder_age_days", elder_age_days))
@@ -535,6 +539,8 @@ func _apply_action(agent: Agent, action: Action, occupied: Dictionary) -> void:
 			_apply_look(agent, action)
 		Action.Kind.REPRODUCE_WITH:
 			_apply_reproduce_with(agent, action)
+		Action.Kind.TEACH:
+			_apply_teach(agent, action)
 
 # --- 新しい物理動作(Phase 4) ---
 
@@ -839,6 +845,41 @@ func _apply_look(agent: Agent, action: Action) -> void:
 	agent.spend_stamina(look_stamina)
 	action.succeeded = true
 
+# Phase 6: 教育アクション。隣接する他エージェントに任意テキストを伝達する。
+# 物理制約のみ: target 生存 + 自身でない + 隣接 (Chebyshev 1) + stamina コスト。
+# 真偽・価値判断はハーネスが一切関与しない(嘘も迷信も物理的に等価に伝達される)。
+# 受け手の同意は物理ゲート無し(harness 原則: 社会現象として観察する)。
+# テキストが空なら silent fail(情報伝達が成立しないため)。
+func _apply_teach(agent: Agent, action: Action) -> void:
+	var target := _get_agent_by_id(action.target_id)
+	if target == null or not target.is_alive():
+		action.failure_note = "target_invalid"
+		return
+	if target.id == agent.id:
+		action.failure_note = "target_invalid"
+		return
+	if not _is_adjacent(agent, target):
+		action.failure_note = "not_adjacent"
+		return
+	var text: String = action.speech_text.strip_edges()
+	if text == "":
+		action.failure_note = "empty_text"
+		return
+	if not agent.can_afford_stamina(teach_stamina):
+		action.failure_note = "exhausted"
+		return
+	agent.spend_stamina(teach_stamina)
+	target.append_heard_memory(tick, agent.id, agent.agent_name, text)
+	action.succeeded = true
+	_emit_event({
+		"tick": tick,
+		"kind": "teach",
+		"actor_id": agent.id,
+		"target_id": target.id,
+		"position": agent.grid_pos,
+		"text": "%s が %s に「%s」と語り聞かせた" % [agent.agent_name, target.agent_name, text],
+	})
+
 # 生殖は物理アクション。harness は以下の物理制約のみを設ける:
 #   - target が生存していること
 #   - 自分自身でないこと
@@ -1086,6 +1127,10 @@ func _summarize_action(action: Action) -> String:
 			base = "reproduce_with"
 		Action.Kind.SPEAK:
 			base = "speak \"%s\"" % action.speech_text
+		Action.Kind.TEACH:
+			var target := _get_agent_by_id(action.target_id)
+			var target_name: String = target.agent_name if target != null else "?"
+			base = "teach %s \"%s\"" % [target_name, action.speech_text]
 		_:
 			base = "?"
 	# 失敗時は LLM が振り返れるように理由を併記(wait/speak は常に成功扱い)
