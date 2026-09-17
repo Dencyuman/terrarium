@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "terrarium",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-16",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "WORLDS", "class_name": "TerrariumWorld" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TerrariumWorld"] }],
+  "limits": { "cpu_ms": 100 },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "vars": {
+    "MAX_AI_TICKS_PER_DAY": "500",
+    "OPENAI_MODEL": "gpt-5.6-luna",
+  },
+}

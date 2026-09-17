@@ -1,0 +1,5 @@
+# Local development only. Copy to .dev.vars; never commit actual keys.
+TYPESAFE_API_KEY=""
+OPENAI_API_KEY=""
+# Required for controlling worlds on a public deployment.
+ADMIN_TOKEN=""

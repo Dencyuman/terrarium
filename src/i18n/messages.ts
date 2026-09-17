@@ -1,0 +1,217 @@
+// Japanese is the source language. Each message has a matching English entry.
+export const english = {
+  こもれびの庭: "Sunlit Grove",
+  "保存領域を開けませんでした。このタブでは観察を続けられます。":
+    "Storage could not be opened. You can keep watching in this tab.",
+  "保存できませんでした。世界を書き出して手元に残してください。":
+    "Could not save. Export your world to keep a copy.",
+  接続できませんでした: "Could not connect",
+  接続を確認してください: "Please check your connection",
+  小さな世界の観察室: "An observatory for little worlds",
+  "小さな命の、終わらない物語。AIが生きる箱庭を観察するTerrarium。":
+    "Little lives, unfolding stories. Watch an AI-inhabited world in Terrarium.",
+  箱庭: "World",
+  つながり: "Relationships",
+  家系: "Family tree",
+  年代記: "Chronicle",
+  観察ビュー: "Views",
+  環境音を流す: "Play ambient sound",
+  環境音を止める: "Mute ambient sound",
+  観察の設定: "Settings",
+  "Luna 接続": "Luna connected",
+  "Jev 接続": "Jev connected",
+  観察デモ: "Demo",
+  クラウドに保存: "Saved in the cloud",
+  ローカルに保存: "Saved locally",
+  このブラウザに保存: "Saved in this browser",
+  この世界の住人: "Residents",
+  住人を探す: "Find a resident",
+  物語を終えた: "Passed away",
+  新しい世界をつくる: "Create a world",
+  人: "residents",
+  世代: "generations",
+  この世界の年代記: "This world's chronicle",
+  "何気ないひとことも、大切な出会いも。":
+    "Small words and meaningful encounters.",
+  すべて: "All",
+  会話: "Conversations",
+  誕生: "Births",
+  旅立ち: "Deaths",
+  伝承: "Stories",
+  目標: "Goals",
+  "いま、この世界で": "Happening now",
+  年代記へ: "Chronicle",
+  通知を閉じる: "Dismiss notification",
+  ひとやすみ中: "Paused",
+  物語が進んでいます: "Life goes on",
+  住人たちが考えています: "Residents are thinking",
+  過去を観察中: "Viewing the past",
+  "ローカルデモ · API利用なし": "Local demo · No API calls",
+  "{model} · 推定 ${cost}": "{model} · Est. ${cost}",
+  一部未集計: "Some costs unavailable",
+  "1 tick 進める": "Advance one tick",
+  再生: "Play",
+  一時停止: "Pause",
+  観察履歴: "Timeline",
+  現在に戻る: "Return to present",
+  世界を書き出す: "Export world",
+  観察室に戻る: "Exit immersive view",
+  閉じる: "Close",
+  あなたの小さな世界: "Your worlds",
+  "まだ見ぬ物語を、ひとつ。": "Begin a new story",
+  天気: "Weather",
+  "朝・昼・夕方・夜の背景は、世界の時刻に合わせて移り変わります。":
+    "The sky follows the world's clock through morning, day, evening and night.",
+  "即時判断 · Jev": "Actions · Jev",
+  "サーバーの TYPESAFE_API_KEY を設定してください":
+    "Set TYPESAFE_API_KEY on the server",
+  接続設定済み: "Configured",
+  "熟考・言葉 · Luna": "Reflection & speech · Luna",
+  "サーバーの OPENAI_API_KEY を設定してください":
+    "Set OPENAI_API_KEY on the server",
+  観察室の合言葉: "Access token",
+  公開サーバーへ接続するとき: "For a hosted server",
+  "世界は見ている間だけ進みます。タブを閉じると停止し、次回は続きから。生成AIの利用料金はCloudflareとは別です。":
+    "Worlds advance while you watch. Close the tab to pause; return to continue. AI API usage is billed separately from hosting.",
+  世界を選ぶ: "Choose a world",
+  新しい世界: "New world",
+  世界を読み込む: "Import world",
+  ファイルが大きすぎます: "This file is too large",
+  観察に戻る: "Back to world",
+  デモ: "Demo",
+  世界の名前: "World name",
+  地形のシード: "Terrain seed",
+  はじめの住人: "Starting population",
+  住人の知能: "Resident intelligence",
+  "観察デモ — 無料・このブラウザで動作": "Demo — Free, runs in this browser",
+  "Jev — AIがその瞬間を判断": "Jev — AI chooses each action",
+  "Luna — 毎tickの行動生成（従来方式）":
+    "Luna — Generates actions each tick (legacy)",
+  "目標や関係を踏まえて、住人が行動を選びます。":
+    "Residents act on their goals, relationships and experiences.",
+  "行動ルールによるデモです。API料金はかかりません。":
+    "A rule-based demo. No API charges.",
+  "現在は生成LLMが未設定のため、熟考・発話・教育は停止しています。":
+    "Reflection, speech and teaching are unavailable until a language model is configured.",
+  世界をひらく: "Create world",
+  ひとりの物語: "A resident's story",
+  詳細を閉じる: "Close details",
+  "{age}日齢": "{age} days old",
+  "第{count}世代": "Generation {count}",
+  "· 故人": "· Deceased",
+  体力: "Health",
+  満腹: "Fullness",
+  元気: "Energy",
+  協調: "Cooperation",
+  攻撃: "Aggression",
+  好奇: "Curiosity",
+  "いま、心が向く先": "What draws their attention",
+  デモの選択傾向: "Demo scores",
+  "次の瞬間に、何を選ぶだろう。": "What will they choose next?",
+  考え直す必要性: "Need to reflect",
+  これからのことを考えている: "Thinking about what comes next",
+  小さな目標: "A little goal",
+  "まだ、目標は生まれていない。": "No goal has emerged yet.",
+  心に残ること: "Memories",
+  "この世界での思い出を、これから。": "Memories are still to come.",
+  自身の経験: "Experienced",
+  目にしたこと: "Witnessed",
+  聞いた話: "Heard",
+  見えないつながり: "Invisible connections",
+  命のつづき: "Life, continued",
+  "同じ世界に生きる。けれど、心の距離はひとりずつ違う。":
+    "One shared world. A different bond between every pair.",
+  "ひとつの出会いから、新しい世代へ。":
+    "From one encounter to another generation.",
+  関係性グラフ: "Relationship graph",
+  家系図: "Family tree",
+  "出会いを重ねると、ここに関係が描かれます。":
+    "Relationships will appear as residents meet.",
+  "まだ、最初の世代。新しい命が生まれると、家系がつながります。":
+    "The first generation is here. Births will connect the family tree.",
+  "好意・信頼": "Affection & trust",
+  親から子へ: "Parent to child",
+  "距離・対立": "Distance & conflict",
+  "朝の光が、森をゆっくり起こす。": "Morning light gently wakes the forest.",
+  "風が通り、物語が生まれる。": "A breeze passes. A story begins.",
+  "夕色が、木々を包んでいく。": "Evening colours settle over the trees.",
+  "森が静かに、夜を迎える。": "The forest quietly welcomes the night.",
+  "住人をクリックして観察。ドラッグで移動、ホイールで拡大縮小。住人一覧からも選択できます。":
+    "Select a resident to observe. Drag to pan and scroll to zoom. You can also select residents from the list.",
+  "{size} × {size} の小さな世界": "A little {size} × {size} world",
+  "天気を設定：{weather}": "Set weather: {weather}",
+  縮小: "Zoom out",
+  拡大: "Zoom in",
+  視点を戻す: "Reset view",
+  名前を表示: "Show names",
+  関係を表示: "Show relationships",
+  没入モード: "Immersive view",
+  ドラッグで移動: "Drag to pan",
+  住人をクリックして観察: "Select a resident to observe",
+  箱庭のマップ: "World map",
+  晴れ: "Clear",
+  曇り: "Cloudy",
+  雨: "Rain",
+  朝: "Morning",
+  昼: "Day",
+  夕方: "Evening",
+  夜: "Night",
+  言語: "Language",
+  "表示と新しく生成する文章の言語です。過去にAIが書いた文章は元の言語で残ります。":
+    "Sets the interface and the language of new AI writing. Previously generated text keeps its original language.",
+  "{count}人": "{count} residents",
+  "{day}日目": "DAY {day}",
+  "{speed}倍速": "{speed}× speed",
+  "{name}を観察": "Observe {name}",
+  "TERRARIUM OBSERVATORY": "TERRARIUM OBSERVATORY",
+  "FIELD NOTES": "FIELD NOTES",
+  "EVERY LIFE LEAVES A TRACE": "EVERY LIFE LEAVES A TRACE",
+  "LIVES, INTERTWINED": "LIVES, INTERTWINED",
+  "THE SPACE BETWEEN US": "THE SPACE BETWEEN US",
+  GOAL: "GOAL",
+  BONDS: "BONDS",
+  MEMORIES: "MEMORIES",
+  LIVE: "LIVE",
+  DAY: "DAY",
+  TICK: "TICK",
+} as const;
+
+export type MessageKey = keyof typeof english;
+export const japanese: Partial<Record<MessageKey, string>> = {
+  "TERRARIUM OBSERVATORY": "小さな世界の観察室",
+  "FIELD NOTES": "観察記録",
+  "EVERY LIFE LEAVES A TRACE": "ひとつずつ、記憶になる",
+  "LIVES, INTERTWINED": "つながっていく命",
+  "THE SPACE BETWEEN US": "住人たちの関係",
+  GOAL: "目標",
+  BONDS: "関係",
+  MEMORIES: "記憶",
+  LIVE: "現在",
+  DAY: "日目",
+  TICK: "経過",
+};
+export type Locale = "ja" | "en";
+const singularEnglish: Partial<Record<MessageKey, string>> = {
+  "{count}人": "{count} resident",
+  "{age}日齢": "{age} day old",
+  人: "resident",
+  世代: "generation",
+};
+const pluralRules = new Intl.PluralRules("en");
+export function translate(
+  locale: Locale,
+  key: MessageKey,
+  params: Record<string, string | number> = {},
+) {
+  const singular =
+    pluralRules.select(Number(params.count ?? params.age)) === "one";
+  const value =
+    locale === "en"
+      ? singular
+        ? (singularEnglish[key] ?? english[key])
+        : english[key]
+      : (japanese[key] ?? key);
+  return value.replace(/\{(\w+)\}/g, (match, name) =>
+    String(params[name] ?? match),
+  );
+}
